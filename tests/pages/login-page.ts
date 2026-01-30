@@ -1,4 +1,5 @@
 import { expect, Page } from '@playwright/test';
+import { logger } from '../utils/logger';
 
 /** Selectores reutilizables del flujo de login (POM) */
 const SELECTORS = {
@@ -107,10 +108,10 @@ export class LoginPage {
     try {
       await acceptButton.waitFor({ state: 'visible', timeout });
       await acceptButton.click();
-      console.log('  ✓ Cookies aceptadas (popup visible)');
+      logger.success('Cookies aceptadas (popup visible)');
       return true;
     } catch (error) {
-      console.log('  — Popup de cookies no visible, continuando...');
+      logger.muted('Popup de cookies no visible, continuando...');
       return false;
     }
   }

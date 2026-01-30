@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Page } from '@playwright/test';
+import { logger } from './logger';
 
 /** Ruta donde se guardan las cookies de sesión */
 const COOKIES_FILE = path.join(process.cwd(), 'tests', 'fixtures', 'cookies.json');
@@ -64,9 +65,9 @@ export async function saveCookies(page: Page): Promise<void> {
   if (maxExpiration) {
     const timeRemaining = maxExpiration - Date.now();
     const formatted = formatTimeRemaining(timeRemaining);
-    console.log(`  ✓ Cookies guardadas - Válidas por: ${formatted}`);
+    logger.success(`Cookies guardadas - Válidas por: ${formatted}`);
   } else {
-    console.log(`  ✓ Cookies guardadas - Sin fecha de expiración (sesión)`);
+    logger.success('Cookies guardadas - Sin fecha de expiración (sesión)');
   }
 }
 
@@ -84,24 +85,24 @@ export async function loadCookies(page: Page): Promise<boolean> {
     await page.context().addCookies(cookiesData.cookies);
 
     const ageMinutes = Math.floor((Date.now() - cookiesData.savedAt) / (1000 * 60));
-    console.log(`  ✓ Cookies cargadas (guardadas hace ${ageMinutes} minuto${ageMinutes !== 1 ? 's' : ''})`);
+    logger.success(`Cookies cargadas (guardadas hace ${ageMinutes} minuto${ageMinutes !== 1 ? 's' : ''})`);
 
     // Mostrar tiempo restante de validez
     if (cookiesData.expiresAt) {
       const timeRemaining = cookiesData.expiresAt - Date.now();
       if (timeRemaining > 0) {
         const formatted = formatTimeRemaining(timeRemaining);
-        console.log(`  ✓ Tiempo restante de validez: ${formatted}`);
+        logger.info(`Tiempo restante de validez: ${formatted}`);
       } else {
-        console.log(`  ⚠ Cookies expiradas (expiraron hace ${formatTimeRemaining(-timeRemaining)})`);
+        logger.warn(`Cookies expiradas (expiraron hace ${formatTimeRemaining(-timeRemaining)})`);
       }
     } else {
-      console.log(`  ⚠ Cookies sin fecha de expiración (sesión)`);
+      logger.warn('Cookies sin fecha de expiración (sesión)');
     }
 
     return true;
   } catch (error) {
-    console.log(`  ⚠ Error cargando cookies: ${error}`);
+    logger.error(`Error cargando cookies: ${error}`);
     return false;
   }
 }
@@ -112,6 +113,6 @@ export async function loadCookies(page: Page): Promise<boolean> {
 export function deleteCookies(): void {
   if (fs.existsSync(COOKIES_FILE)) {
     fs.unlinkSync(COOKIES_FILE);
-    console.log(`  ✓ Cookies eliminadas`);
+    logger.success('Cookies eliminadas');
   }
 }

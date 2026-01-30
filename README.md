@@ -20,8 +20,11 @@ npx playwright install chromium   # solo Chrome
 # Todos los tests
 npm test
 
-# Solo el spec de login
+# Solo el spec de login (flujo normal con gestión de sesión)
 npm test -- tests/specs/login.spec.ts
+
+# Test 2: login fallido con OTP incorrecto (no toca cookies)
+npm test -- tests/specs/login-fail-otp.spec.ts
 
 # Con interfaz visible (headed)
 npm test -- tests/specs/login.spec.ts --headed
@@ -44,17 +47,20 @@ El test `login.spec.ts` documenta cada paso en la terminal (con `test.step`):
    - Escribir el código OTP (8048)
    - Aceptar cookies (popup CybotCookiebot)
 4. **Guardar cookies** – Después de un login exitoso, guarda las cookies para próximas ejecuciones
-5. **Esperar cierre de la página** – El test termina cuando se cierra la pestaña
+5. **Esperar 5 segundos (fin del test)** – El test termina automáticamente (no hace falta cerrar la pestaña a mano)
 
-### Flujo del test KO (Login exitoso para guardar sesión)
+## Flujo del test 2 (OTP incorrecto)
 
-El test `login-ko.spec.ts` ahora contiene un único test que realiza un login exitoso. Su propósito principal es forzar un inicio de sesión limpio para guardar cookies válidas, que luego pueden ser utilizadas por el test `login.spec.ts` en ejecuciones posteriores (siempre y cuando las cookies no hayan expirado).
+El test `login-fail-otp.spec.ts` valida el escenario **KO** de OTP incorrecto **sin tocar cookies** (no carga ni guarda sesión):
 
-1. **Forzar borrado de cookies** – Para asegurar un estado limpio.
-2. **Login exitoso** – Se realiza un login completo con OTP correcto.
-3. **Guardar cookies** – Las cookies de esta sesión se guardan.
+1. Ir a la página de login
+2. Rellenar teléfono y pulsar Continuar
+3. Resolver captcha manualmente
+4. Introducir OTP incorrecto (por defecto `1111`)
+5. Aceptar cookies si aparece el popup
+6. Verificar que el login **no** se completa (actualmente la comprobación es “seguir en `/login`”)
 
-**Importante**: Este test también requiere la resolución manual del captcha.
+> Nota: si el sistema deja pasar OTPs incorrectos, este test fallará y nos servirá como señal de que el entorno no está validando OTP.
 
 ### Sistema de cookies/sesión
 
@@ -78,12 +84,13 @@ tests/
   pages/
     login-page.ts   # Page Object: selectores y acciones del login
   specs/
-    login.spec.ts   # Test: flujo de login usando LoginPage
+    login.spec.ts           # Test: flujo de login usando LoginPage
+    login-fail-otp.spec.ts  # Test: login fallido (OTP incorrecto) — no toca cookies
   utils/
     cookies.ts      # Utilidades para guardar/cargar cookies
 ```
 
-- **Page Object** (`login-page.ts`): selectores en `SELECTORS`, métodos por paso (goto, fillPhone, clickContinueWhenEnabled, waitForOtpStepReady, fillOtp, acceptCookieConsent, isSessionValid, performFullLogin).
+- **Page Object** (`login-page.ts`): selectores en `SELECTORS`, métodos por paso (goto, fillPhone, clickContinueWhenEnabled, waitForOtpStepReady, fillOtp, tryAcceptCookieConsent, isSessionValid, performFullLogin).
 - **Utils** (`cookies.ts`): funciones para guardar/cargar cookies de sesión.
 - **Specs**: orquestan los pasos llamando al Page Object; cada paso va envuelto en `test.step()` para que se vea en la terminal.
 
