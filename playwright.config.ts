@@ -1,20 +1,27 @@
 import { defineConfig } from '@playwright/test';
 
+const isCI = process.env.CI === 'true';
+
 export default defineConfig({
   testDir: './tests/specs',
   timeout: 30 * 1000,
-  /** Reporter 'list' muestra cada paso (test.step) en la terminal */
-  reporter: 'list',
+  workers: 1,
+  /** Reporter 'list' en terminal + log por ejecución en tests/logs/ (FAIL si falla alguno) */
+  reporter: [
+    ['list'],
+    ['./tests/reporters/run-logger.ts', {}],
+  ],
   use: {
-    headless: false,
+    headless: isCI,
     viewport: { width: 1280, height: 1024 },
     browserName: 'chromium',
-    channel: 'chrome',
+    ...(isCI ? {} : { channel: 'chrome' as const }),
     launchOptions: {
       args: [
         '--disable-crashpad',
         '--disable-breakpad',
         '--disable-dev-shm-usage',
+        
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-extensions',

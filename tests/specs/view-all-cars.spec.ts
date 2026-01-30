@@ -3,65 +3,13 @@ import * as path from 'path';
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/login-page';
 import { CarsPage } from '../pages/cars-page';
+import { PHONE, OTP } from '../config';
+import { stepCheckpoint, keepPageOpenByTimer, waitForEnter } from '../helpers/test-helpers';
 import { loadCookies, saveCookies } from '../utils/cookies';
 import { logger } from '../utils/logger';
-
-const PHONE = '879542345';
-const OTP = '8048';
-
-async function waitForEnter(prompt: string): Promise<void> {
-  if (!process.stdin.isTTY) {
-    // En entornos no interactivos (CI / algunas terminals), no podemos esperar ENTER.
-    // No bloqueamos el test aquí (si no, no llegaría a los siguientes pasos como "Marca").
-    logger.muted('STDIN no es interactivo; se omite la espera de ENTER.');
-    return;
-  }
-
-  logger.info(prompt);
-  process.stdin.resume();
-  await new Promise<void>((resolve) => {
-    process.stdin.once('data', () => resolve());
-  });
-  process.stdin.pause();
-}
-
-async function stepCheckpoint(label: string): Promise<void> {
-  const enabled = String(process.env.STEP_BY_STEP ?? '1').toLowerCase();
-  if (!['1', 'true', 'yes', 'y', 'on'].includes(enabled)) return;
-  await waitForEnter(`Checkpoint: ${label}. Pulsa ENTER para continuar...`);
-}
-
-async function keepPageOpenByTimer(page: { waitForTimeout: (ms: number) => Promise<void> }) {
-  const keepOpenSeconds = Number(process.env.KEEP_OPEN_SECONDS ?? '20');
-  const seconds = Number.isFinite(keepOpenSeconds) && keepOpenSeconds > 0 ? keepOpenSeconds : 20;
-  logger.info(`Manteniendo la página abierta ${seconds}s... (configurable con KEEP_OPEN_SECONDS)`);
-  for (let i = seconds; i >= 1; i -= 1) {
-    if (i <= 10 || i % 60 === 0) {
-      logger.muted(`Se cerrará en ${i}s`);
-    }
-    await page.waitForTimeout(1000);
-  }
-}
-
-const STEPS = {
-  loadCookies: 'Cargar cookies guardadas (si existen)',
-  verifySession: 'Verificar si la sesión es válida',
-  ensureSession: 'Asegurar sesión válida (login si hace falta)',
-  viewAllCars: 'Abrir "Ver todos los coches"',
-  openBrand: 'Abrir filtro "Marca"',
-  viewAllBrands: 'Pulsar "Ver todas las marcas"',
-  reopenBrand: 'Pulsar en Marca de nuevo (reabrir desplegable; workaround: se cierra al pulsar "Ver todas las marcas")',
-  selectBrandOpel: 'Seleccionar marca Opel',
-  listModels: 'Listar los modelos visibles (Opel Corsa, Opel Frontera, Opel MOKA, etc.)',
-  exchangeType: 'Pulsar en tipo de cambio',
-  selectManualTransmission: 'Seleccionar cambio manual',
-  listModelsManual: 'Listar coches con cambio manual encontrados (repetir paso 9)',
-  clickFirstCar: 'Seleccionar el coche',
-  keepOpen: 'Mantener la página abierta (antes de cerrar)',
-} as const;
+import { STEPS } from '../steps/view-all-cars.steps';
 
 test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) => {
-  // Dejamos margen amplio para que puedas inspeccionar el flujo sin que Playwright cierre el navegador por timeout.
   test.setTimeout(30 * 60 * 1000);
   const loginPage = new LoginPage(page);
   const carsPage = new CarsPage(page);
@@ -97,12 +45,12 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       await loginPage.gotoDashboard();
       await saveCookies(page);
     } else {
-      // Con cookies válidas, entramos al dashboard directamente
       await loginPage.gotoDashboard();
     }
 
-    // En ambos casos: si aparece popup de cookies, lo aceptamos
     await loginPage.tryAcceptCookieConsent();
+    // Verificación explícita de sesión: iniciales visibles en el header.
+    await loginPage.assertLoggedInAndGetInitials();
   });
 
   await test.step(STEPS.viewAllCars, async () => {
@@ -146,6 +94,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       const marcaByIndex = page.locator('div.ShortcutsFilterBar_filters__shorcuts__V25SQ > div:nth-child(7) div.FilterShortcutButton_filter__button__ZCF57 > p').first();
       const marcaByText = page.locator('div.FilterShortcutButton_filter__button__ZCF57').filter({ has: page.locator('p', { hasText: /marca/i }) }).locator('p').first();
       try {
+ 
         await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
         await marcaByIndex.click(clickOpt);
       } catch {
@@ -216,7 +165,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       firstListedPrice: first.price,
       locatorOverride: process.env.FIRST_CAR_LOCATOR,
     });
-    logger.success(`Pulsado en: ${first.model} - ${first.price}.`);
+    // El mensaje "Pulsado en: ..." ya se emite dentro de clickFirstVisibleCar
   });
 
   await test.step(STEPS.keepOpen, async () => {
@@ -236,6 +185,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       String(now.getSeconds()).padStart(2, '0');
     const screenshotPath = `tests/artifacts/view-all-cars-final-${dateTime}.png`;
     fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+    await page.waitForTimeout(2000);
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch((e) => {
       logger.muted(`No se pudo guardar el screenshot: ${e}`);
     });

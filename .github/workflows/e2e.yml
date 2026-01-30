@@ -1,0 +1,53 @@
+# Workflow de ejemplo: tests E2E con Playwright en GitHub Actions.
+# Requiere credenciales/OTP en secretos si los tests hacen login contra un entorno real.
+# Ver README → Integración en CI.
+
+name: E2E (Playwright)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CI: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: npm run test
+        env:
+          # Opcional: credenciales desde secretos (si no usas constantes en código)
+          # E2E_PHONE: ${{ secrets.E2E_PHONE }}
+          # E2E_OTP: ${{ secrets.E2E_OTP }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+            tests/artifacts/
+            tests/logs/
+          retention-days: 7

@@ -1,20 +1,9 @@
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/login-page';
+import { PHONE, OTP } from '../config';
 import { loadCookies, saveCookies } from '../utils/cookies';
 import { logger } from '../utils/logger';
-
-const STEPS = {
-  loadCookies: 'Cargar cookies guardadas (si existen)',
-  verifySession: 'Verificar si la sesión es válida',
-  acceptCookiesIfVisibleAfterSession: 'Aceptar cookies (si el popup aparece tras sesión válida)',
-  login: 'Hacer login completo (teléfono → captcha → OTP)',
-  saveCookies: 'Guardar cookies de sesión',
-  acceptCookiesIfVisibleAfterLogin: 'Aceptar cookies (si el popup aparece después del login)',
-  waitClose: 'Esperar 5 segundos (fin del test)',
-} as const;
-
-const PHONE = '879542345';
-const OTP = '8048';
+import { STEPS } from '../steps/login.steps';
 
 test('Completar teléfono en driverevel login', async ({ page }) => {
   test.setTimeout(5 * 60 * 1000);

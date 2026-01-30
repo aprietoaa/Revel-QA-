@@ -1,163 +1,170 @@
-# Revel – Tests E2E con Playwright
+# Revel – Tests E2E (Playwright)
 
-Tests end-to-end para el flujo de login de driverevel.com usando **Playwright** y **Page Object Model (POM)**.
+Tests end-to-end para **driverevel.com**: login, listado de coches, filtros y selección. Incluye gestión de cookies para reutilizar sesión y evitar repetir login/captcha.
 
-## Requisitos
+**Inicio rápido:** `npm install` → `npm run test`. Para forzar login desde cero: `npx tsc && npm run clean:cookies && npm run test`.
 
-- Node.js (con npm)
-- Chrome instalado (o navegadores de Playwright)
+---
 
-## Instalación
+## Prerrequisitos
+
+- **Node.js** (v18 o superior recomendado)
+- **npm**
+- **Google Chrome** instalado (los tests usan `channel: 'chrome'`)
+- Para `clean:cookies`: que exista `dist/` (ejecutar `npx tsc` si no lo has compilado antes; el script usa `node dist/tests/utils/delete-cookies.js`)
+
+Ejecutar los tests desde una **terminal** (Terminal.app, iTerm, etc.) suele dar mejor resultado que desde el IDE, sobre todo para lanzar Chrome y para pausas con ENTER (`STEP_BY_STEP`).
+
+---
+
+## Cómo ejecutar
+
+### Instalación
 
 ```bash
 npm install
-npx playwright install chromium   # solo Chrome
 ```
 
-## Ejecutar tests
+### Ejecutar todos los tests
 
 ```bash
-# Todos los tests
-npm test
+npm run test
+```
 
-# Solo el spec de login (flujo normal con gestión de sesión)
-npm test -- tests/specs/login.spec.ts
+- Ejecuta los 3 specs con 1 worker.
+- Por defecto el navegador se abre en modo visible (`headless: false`).
+- Si existen cookies guardadas en `tests/fixtures/cookies.json`, los tests que requieren sesión las reutilizan; si no, hacen login (teléfono + OTP).
 
-# Test 2: login fallido con OTP incorrecto (no toca cookies)
-npm test -- tests/specs/login-fail-otp.spec.ts
+### Ejecutar solo el test de coches (paso 3)
 
-# Test 3: ver todos los coches (usa cookies si existen; si no, hace login)
-npm run test:cars -- --headed
+```bash
+npm run test:cars
+```
 
-# (Opcional) Si los botones no se encuentran por texto/role, puedes forzar selectores estables:
-# BRAND_TESTID=brand-filter ALL_BRANDS_TESTID=brands-select-all npm run test:cars -- --headed
-# o con locator directo:
-# BRAND_LOCATOR='css=[data-testid="brand-filter"]' ALL_BRANDS_LOCATOR='css=[data-testid="brands-select-all"]' npm run test:cars -- --headed
+### Ejecutar solo el paso 3 sin cookies (login + coches desde cero)
 
-# Con interfaz visible (headed)
-npm test -- tests/specs/login.spec.ts --headed
+Para lanzar únicamente el test “Ver todos los coches” pero forzando login desde cero (sin usar cookies guardadas):
 
-# Forzar borrado de cookies (para forzar nuevo login y captcha)
+```bash
+npx tsc          # solo si dist/ no existe
 npm run clean:cookies
+npm run test:cars
 ```
 
-## Flujo del test de login
+Así el flujo hace login (teléfono + OTP) y luego el test de coches; al terminar se guardan cookies para la próxima vez.
 
-El test `login.spec.ts` documenta cada paso en la terminal (con `test.step`):
+### Borrar cookies y forzar login completo (los 3 tests)
 
-1. **Cargar cookies guardadas** – Intenta cargar cookies de sesión guardadas previamente
-2. **Verificar sesión** – Comprueba si la sesión es válida navegando a una página protegida
-3. **Login completo** (solo si es necesario) – Si no hay cookies válidas:
-   - Ir a la página de login
-   - Rellenar teléfono y pulsar Continuar
-   - **Nota: La resolución del captcha es siempre manual en este momento, incluso para números inválidos o sin sesión previa.**
-   - Esperar captcha y paso OTP (resolución manual)
-   - Escribir el código OTP (8048)
-   - Aceptar cookies (popup CybotCookiebot)
-4. **Guardar cookies** – Después de un login exitoso, guarda las cookies para próximas ejecuciones
-5. **Esperar 5 segundos (fin del test)** – El test termina automáticamente (no hace falta cerrar la pestaña a mano)
+Para simular “primera vez” y que el flujo pase por login + OTP (y captcha manual si aplica):
 
-## Flujo del test 2 (OTP incorrecto)
-
-El test `login-fail-otp.spec.ts` valida el escenario **KO** de OTP incorrecto **sin tocar cookies** (no carga ni guarda sesión):
-
-1. Ir a la página de login
-2. Rellenar teléfono y pulsar Continuar
-3. Resolver captcha manualmente
-4. Introducir OTP incorrecto (por defecto `1111`)
-5. Aceptar cookies si aparece el popup
-6. Verificar que el login **no** se completa (actualmente la comprobación es “seguir en `/login`”)
-
-> Nota: si el sistema deja pasar OTPs incorrectos, este test fallará y nos servirá como señal de que el entorno no está validando OTP.
-
-## Flujo del test 3 (Ver todos los coches)
-
-El test `view-all-cars.spec.ts` documenta cada paso en la terminal (con `test.step`):
-
-1. **Cargar cookies guardadas (si existen)** – Intenta cargar cookies de sesión guardadas previamente
-2. **Verificar si la sesión es válida** – Comprueba si la sesión es válida navegando a una página protegida
-3. **Asegurar sesión válida (login si hace falta)** – Si no hay cookies válidas, hace login completo; si no, va al dashboard
-4. **Abrir "Ver todos los coches"** – Pulsa en el enlace para entrar al listado de coches
-5. **Abrir filtro "Marca"** – Pulsa en Marca para abrir el desplegable del filtro
-6. **Pulsar "Ver todas las marcas"** – Pulsa en "Ver todas las marcas" dentro del desplegable
-7. **Pulsar en Marca de nuevo (reabrir desplegable)** *(workaround)* – Tras "Ver todas las marcas" el desplegable se cierra; se vuelve a pulsar en Marca para reabrir (ver [Bugs conocidos](#bugs-conocidos-qa))
-8. **Seleccionar marca Opel** – Pulsa en la marca Opel
-9. **Mantener la página abierta (antes de cerrar)** – Espera ENTER o temporizador configurable
-
-### Sistema de cookies/sesión
-
-El test usa un **sistema de gestión de cookies** para evitar resolver el captcha en cada ejecución:
-
-- **Primera ejecución**: Hace login completo y guarda las cookies en `tests/fixtures/cookies.json`
-- **Ejecuciones siguientes**: Carga las cookies y verifica si la sesión sigue válida
-- **Si la sesión expiró**: Vuelve a hacer login completo y actualiza las cookies
-
-**Ventajas:**
-- ✅ No necesitas resolver el captcha cada vez
-- ✅ Los tests son más rápidos en ejecuciones consecutivas
-- ✅ Las cookies se guardan localmente (no se suben al repositorio)
-
-## Estructura del proyecto (POM)
-
-```
-tests/
-  fixtures/
-    cookies.json    # Cookies de sesión guardadas (no se sube al repo)
-  pages/
-    login-page.ts   # Page Object: login y "Ver todos los coches"
-    cars-page.ts    # Page Object: filtro Marca, Ver todas las marcas, Seleccionar todas las marcas
-  specs/
-    login.spec.ts           # Test: flujo de login usando LoginPage
-    login-fail-otp.spec.ts  # Test: login fallido (OTP incorrecto) — no toca cookies
-    view-all-cars.spec.ts   # Test: navegar a "Ver todos los coches" (reutiliza cookies si existen)
-  utils/
-    cookies.ts      # Utilidades para guardar/cargar cookies
+```bash
+npx tsc
+npm run clean:cookies
+npm run test
 ```
 
-- **Page Object** (`login-page.ts`): selectores en `SELECTORS`, métodos por paso (goto, fillPhone, clickContinueWhenEnabled, waitForOtpStepReady, fillOtp, tryAcceptCookieConsent, isSessionValid, performFullLogin).
-- **Utils** (`cookies.ts`): funciones para guardar/cargar cookies de sesión.
-- **Specs**: orquestan los pasos llamando al Page Object; cada paso va envuelto en `test.step()` para que se vea en la terminal.
+`clean:cookies` elimina `tests/fixtures/cookies.json`. La siguiente ejecución de tests guardará nuevas cookies al completar el login.
 
-## Bugs conocidos (QA)
+### Variables de entorno opcionales
 
-Se documentan aquí comportamientos erróneos de la aplicación detectados durante las pruebas E2E, para trazabilidad y para que el equipo de desarrollo pueda corregirlos.
+| Variable | Uso |
+|----------|-----|
+| `STEP_BY_STEP` | Si `1`/`true`/`yes`, pausa con “Pulsa ENTER” en checkpoints (solo tiene efecto con terminal interactiva). |
+| `KEEP_OPEN_SECONDS` | Segundos que se mantiene la página abierta al final del test de coches (por defecto 20). |
+| `KEEP_OPEN_MODE` | Modo de espera al final (`manual` / `timer`). |
+| `DEBUG_SELECTORS` | `1`/`true` para logs de depuración de selectores. |
+| `BRAND_LOCATOR`, `BRAND_TESTID`, `VIEW_ALL_BRANDS_LOCATOR` | Overrides para filtro de marca. |
+| `BRAND_OPEL_LOCATOR` / `BRAND_OPEL_TESTID` | Overrides para opción “Opel”. |
+| `EXCHANGE_TYPE_LOCATOR`, `EXCHANGE_TYPE_OPTION_LOCATOR`, etc. | Overrides para filtro tipo de cambio. |
+| `FIRST_CAR_LOCATOR`, `CAR_LIST_TESTID`, `CAR_CARD_TESTID` | Overrides para listado y primera ficha de coche. |
 
-### Filtro Marca: desplegable se cierra al pulsar "Ver todas las marcas"
+Los logs de cada ejecución se escriben en `tests/logs/` (archivo por run). La carpeta `tests/artifacts/` guarda screenshots (p. ej. del test de coches).
 
-- **Qué ocurre**: Al pulsar en "Ver todas las marcas" dentro del filtro Marca, el filtro se aplica pero el desplegable se cierra. Para ver la lista de marcas hay que pulsar de nuevo en "Marca" para reabrir el desplegable.
-- **Comportamiento esperado**: El desplegable debería permanecer abierto (o abrir la vista "todas las marcas") sin cerrarse.
-- **Workaround en el test**: En `view-all-cars.spec.ts`, el **paso 7** ("Pulsar en Marca de nuevo") vuelve a pulsar en "Marca" en la misma página para reabrir el desplegable y poder continuar con el paso 8 ("Seleccionar todas las marcas").
+---
 
-## Configuración
+## Integración en CI (propuesta)
 
-- `playwright.config.ts`: timeout, navegador (Chromium/Chrome), viewport, etc.
-- Los tests usan **Chrome** (`channel: 'chrome'` en la config).
+Se incluye un **workflow de GitHub Actions** de ejemplo para ejecutar los tests E2E en cada push/PR (y bajo demanda).
 
-## Automatización de OTP con CI/CD
+### Dónde está
 
-Dado el enfoque del proyecto en **GitHub** y la intención de usar **Twilio**, esta sección detalla una estrategia para automatizar un flujo de autenticación con OTP (One-Time Password) enviado por SMS, integrándolo en pipelines CI/CD de manera segura y reproducible.
+- **Workflow:** [`.github/workflows/e2e.yml`](.github/workflows/e2e.yml)
 
-### Estrategia de Implementación
+### Qué hace el workflow
 
-- **Número de prueba dedicado**: Utilización de un número de teléfono exclusivo (p. ej., Twilio) para entornos de QA/staging, totalmente aislado de producción.
-- **Recuperación programática del OTP**: Los tests consultan una API (como la de Twilio) para filtrar el mensaje correcto y extraer el código OTP automáticamente.
-- **Flujo E2E automatizado**: Un framework como Playwright introduce el OTP extraído para completar el login sin requerir intervención manual.
+1. Checkout del repo y uso de Node.js 20 con caché de npm.
+2. `npm ci` e instalación del navegador Chromium de Playwright (`npx playwright install chromium --with-deps`).
+3. Ejecución de todos los tests con `npm run test`. En CI, Playwright usa **headless** y **Chromium** (sin Chrome del sistema); la config detecta `CI=true` y ajusta `headless` y `channel` automáticamente.
+4. Subida de artefactos (resultados, reporte, screenshots, logs) con retención de 7 días, tanto si los tests pasan como si fallan.
 
-### Integración en CI/CD
+### Cómo activarlo
 
-- **Ejecución automática**: Los pipelines de integración continua (especialmente **GitHub Actions**, así como GitLab CI, Jenkins, etc.) ejecutan los tests de forma automatizada.
-- **Conectividad**: El runner de CI/CD debe tener acceso a Internet para comunicarse con la API de Twilio.
-- **Gestión segura de credenciales**: Las credenciales de Twilio y el número de prueba se almacenan en variables de entorno seguras (p. ej., GitHub Secrets, GitLab CI/CD Variables) y nunca se exponen en logs o el repositorio.
-- **Robustez**: Se implementan mecanismos de *polling* y reintentos para asegurar la estabilidad frente a posibles retrasos en la entrega de SMS.
+- Con el repo en GitHub: el workflow se ejecuta en **push** y **pull_request** a `main`/`master`, y también con **Run workflow** en la pestaña Actions.
+- Si los tests hacen **login con teléfono/OTP**, en entornos reales conviene usar secretos (p. ej. `E2E_PHONE`, `E2E_OTP`) y leerlos en los tests en lugar de constantes en código; en el YAML hay comentarios donde definirlos.
 
-### Seguridad y Trazabilidad
+### Limitaciones a tener en cuenta
 
-- Las credenciales sensibles nunca se exponen.
-- El flujo de pruebas en QA está completamente aislado y no impacta en el entorno de producción.
+- **Captcha:** Si el login muestra captcha, en CI no puede resolverse de forma manual; hace falta un entorno de prueba sin captcha, cookies pregeneradas, o flujos que no requieran login.
+- **Cookies:** En cada run de CI no hay `cookies.json` previo; los tests que necesitan sesión harán login desde cero (con los datos configurados o secretos).
+- **Otros CI:** La misma idea sirve para GitLab CI, Jenkins, etc.: instalar Node, dependencias, Playwright browsers y ejecutar `npm run test` con `CI=true`.
 
-### Beneficios Clave
+---
 
-- **Tests reproducibles y fiables** en entornos de integración continua.
-- **Eliminación de la dependencia** de teléfonos físicos o intervención manual.
-- **Mantiene la seguridad y la integridad** del flujo de autenticación.
-- Refleja **prácticas profesionales** de automatización en entornos de desarrollo reales.
+## Supuestos
+
+- **Entorno bajo prueba:** driverevel.com (producción o el que apunte la URL usada en los tests).
+- **Login:** Se usa un número de teléfono y OTP fijos definidos en `tests/config/constants.ts` (PHONE, OTP). El OTP es válido para ese flujo de prueba.
+- **Captcha:** Si la web muestra captcha en login, debe resolverse manualmente durante la ejecución; las cookies se guardan después para no repetir en siguientes runs.
+- **Cookies:** La sesión se persiste en `tests/fixtures/cookies.json` (no versionado). Sin este archivo o tras `clean:cookies`, los tests que necesitan sesión harán login desde cero.
+- **Navegador:** Chrome instalado en el sistema; Playwright usa `channel: 'chrome'`.
+- **Estructura de la web:** Los tests dependen de selectores y flujos actuales (marca, tipo de cambio, listado de coches). Cambios de diseño o de DOM pueden requerir actualizar page objects o constantes.
+
+---
+
+## Qué automatizarías a continuación (suite de regresión real)
+
+Para convertir esto en una suite de regresión sólida, se podría:
+
+1. **Más flujos de listado y ficha**
+   - Varios filtros (combustible, precio, km).
+   - Ordenación y paginación.
+   - Apertura de ficha de coche y comprobación de datos clave (precio, marca, modelo).
+
+2. **Login y cuenta**
+   - OTP incorrecto ya cubierto (`login-fail-otp.spec.ts`). Añadir: credenciales inválidas, bloqueos, etc.
+   - Cerrar sesión y comprobar redirección o estado anónimo.
+   - Perfil: ver/editar datos de usuario si la web lo permite.
+
+3. **Resiliencia y mantenibilidad**
+   - Fixtures de autenticación reutilizables (p. ej. `authenticatedPage`) para no repetir login en cada spec.
+   - Configuración base URL por entorno (dev/staging/prod) vía variables de entorno.
+   - Revisar y, si hace falta, estabilizar selectores (data-testid cuando existan, o selectores más robustos).
+
+4. **CI y reporting**
+   - Ejecución en CI (GitHub Actions u otro) con `headless: true` y, si aplica, variables de entorno para credenciales/OTP.
+   - Reportes HTML de Playwright y, opcionalmente, envío de resultados o screenshots a un almacén compartido.
+
+5. **Datos y entornos**
+   - Evitar datos fijos en código: usar variables de entorno o secretos para teléfono/OTP en entornos no locales.
+   - Tests de humo mínimos que no dependan de login (p. ej. carga de home, búsqueda sin sesión).
+
+6. **Calidad del código de tests**
+   - Añadir pruebas unitarias o de integración para helpers y utilidades (cookies, logger, constantes) si crecen en complejidad.
+   - Documentar en el README o en comentarios los criterios de “éxito” de cada spec (qué se considera regresión).
+
+---
+
+## Estructura del proyecto (resumen)
+
+- `tests/specs/` – Specs de Playwright (login, login fallido, view-all-cars).
+- `tests/pages/` – Page objects (LoginPage, CarsPage).
+- `tests/helpers/` – Helpers compartidos (waitForEnter, stepCheckpoint, keepPageOpenByTimer).
+- `tests/steps/` – Nombres de pasos por spec (importados por cada `.spec.ts`).
+- `tests/config/` – Constantes (PHONE, OTP, etc.) y `index.ts`.
+- `tests/utils/` – Cookies, delete-cookies, logger.
+- `tests/reporters/` – Reporter que escribe log por run en `tests/logs/`.
+- `tests/fixtures/` – Cookies de sesión (no versionado).
+- `tests/logs/` – Log por ejecución (no versionado).
+- `tests/artifacts/` – Screenshots (no versionado).
+- `playwright.config.ts` – Configuración (Chrome, workers, reporter, etc.).
+- `.github/workflows/` – Workflow de ejemplo para CI (GitHub Actions); ver sección *Integración en CI*.

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import { logger } from './logger';
 
 /** Ruta donde se guardan las cookies de sesión */

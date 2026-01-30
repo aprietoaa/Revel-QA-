@@ -123,6 +123,51 @@ export class LoginPage {
     }
   }
 
+  /**
+   * Verifica que el usuario tiene login correcto y NO está en sesión anónima.
+   *
+   * Comprobaciones:
+   * 1. URL: no estamos en /login (sesión anónima suele redirigir ahí).
+   * 2. Header: existe texto de iniciales en li[8]/div/p (ej. "J P" => "JP"); si en su lugar
+   *    aparece el enlace de login (href="/login" o aria-label="Login"), es sesión anónima.
+   *
+   * Devuelve las iniciales normalizadas. Lanza error si está anónimo o no se puede determinar.
+   */
+  async assertLoggedInAndGetInitials(timeout = 10_000): Promise<string> {
+    const currentUrl = this.page.url();
+    if (currentUrl.includes('/login')) {
+      throw new Error('Sesión anónima: la URL es de login. Se requiere sesión válida.');
+    }
+
+    const container = this.page.locator('xpath=/html/body/header/ul/li[8]').first();
+    const initialsNode = container.locator('xpath=.//div/p').first();
+    const loginLink = container.locator('a[href="/login"], a[aria-label="Login"]').first();
+
+    await container.waitFor({ state: 'attached', timeout }).catch(() => {});
+
+    await Promise.race([
+      initialsNode.waitFor({ state: 'visible', timeout }),
+      loginLink.waitFor({ state: 'visible', timeout }),
+    ]).catch(() => {});
+
+    const initialsVisible = await initialsNode.isVisible().catch(() => false);
+    if (initialsVisible) {
+      const raw = (await initialsNode.innerText().catch(() => '')).trim();
+      const normalized = raw.replace(/\s+/g, '');
+      if (normalized) {
+        logger.success(`Sesión activa (no anónima). Iniciales detectadas: ${normalized}`);
+        return normalized;
+      }
+    }
+
+    const loginVisible = await loginLink.isVisible().catch(() => false);
+    if (loginVisible) {
+      throw new Error('Sesión anónima: se detectó el enlace de login en el header. Se requiere sesión válida.');
+    }
+
+    throw new Error('No se pudo determinar si la sesión es válida (sin iniciales ni enlace de login en el header).');
+  }
+
   async clickViewAllCars(timeout = 30_000) {
     const beforeUrl = this.page.url();
     const debug = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.DEBUG_SELECTORS ?? '').toLowerCase());

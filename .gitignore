@@ -10,3 +10,6 @@ dist/
 
 # Capturas de fallos de tests
 tests/artifacts/
+
+# Logs de cada ejecución (run-YYYY-MM-DD-HH-mm-ss.log)
+tests/logs/
