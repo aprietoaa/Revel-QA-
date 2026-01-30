@@ -10,6 +10,9 @@ const SELECTORS = {
    * Cuando está visible, ya se puede escribir el código OTP.
    */
   otpStepIndicator: 'xpath=/html/body/div[3]/div/div/div/div/div/div[2]/div/div[1]/div[3]/p[1]',
+  /** CTA "Ver todos los coches" */
+  viewAllCarsCta: 'xpath=/html/body/div[3]/div[2]/div/div[3]/div/div[1]/a/p',
+  viewAllCarsLink: 'xpath=/html/body/div[3]/div[2]/div/div[3]/div/div[1]/a',
 } as const;
 
 /** URLs del flujo de login */
@@ -24,6 +27,10 @@ export class LoginPage {
 
   async goto() {
     await this.page.goto(URLS.login);
+  }
+
+  async gotoDashboard(timeout = 30_000) {
+    await this.page.goto(URLS.dashboard, { waitUntil: 'domcontentloaded', timeout });
   }
 
   /**
@@ -114,5 +121,117 @@ export class LoginPage {
       logger.muted('Popup de cookies no visible, continuando...');
       return false;
     }
+  }
+
+  async clickViewAllCars(timeout = 30_000) {
+    const beforeUrl = this.page.url();
+    const debug = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.DEBUG_SELECTORS ?? '').toLowerCase());
+
+    const candidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
+      {
+        name: 'role=link[name~="Ver todos los coches"]',
+        locator: this.page.getByRole('link', { name: /ver todos los coches/i }),
+      },
+      {
+        name: 'text="Ver todos los coches"',
+        locator: this.page.getByText(/ver todos los coches/i).first(),
+      },
+      {
+        name: 'xpath <a>',
+        locator: this.page.locator(SELECTORS.viewAllCarsLink),
+      },
+      {
+        name: 'xpath <p> (original)',
+        locator: this.page.locator(SELECTORS.viewAllCarsCta),
+      },
+    ];
+
+    const tryClick = async (name: string, locator: ReturnType<Page['locator']>) => {
+      const target = locator.first();
+
+      if (debug) {
+        const count = await locator.count().catch(() => 0);
+        logger.info(`Intentando click: ${name} (matches: ${count})`);
+      }
+
+      await target.waitFor({ state: 'visible', timeout });
+      await target.scrollIntoViewIfNeeded();
+
+      // Diagnóstico: ¿qué elemento está encima del target?
+      if (debug) {
+        const box = await target.boundingBox();
+        if (box) {
+          const x = box.x + box.width / 2;
+          const y = box.y + box.height / 2;
+          const top = await this.page
+            .evaluate(({ x, y }) => {
+              const el = document.elementFromPoint(x, y) as HTMLElement | null;
+              if (!el) return null;
+              const text = (el.innerText || el.textContent || '').trim().slice(0, 120);
+              return {
+                tag: el.tagName,
+                id: el.id || null,
+                className: el.className ? String(el.className).slice(0, 120) : null,
+                text: text || null,
+              };
+            }, { x, y })
+            .catch(() => null);
+          if (top) {
+            logger.muted(
+              `Elemento encima (center point): <${top.tag.toLowerCase()}> id=${top.id ?? '-'} class=${top.className ?? '-'} text=${top.text ?? '-'}`
+            );
+          }
+        }
+      }
+
+      // Detectar si abre en otra pestaña
+      const newPagePromise = this.page.context().waitForEvent('page', { timeout: 4_000 }).catch(() => null);
+
+      try {
+        await target.click({ timeout });
+      } catch (error) {
+        if (debug) logger.warn(`Click normal falló (${name}). Reintentando con force...`);
+        await target.click({ timeout, force: true });
+      }
+
+      const newPage = await newPagePromise;
+      if (newPage) {
+        await newPage.waitForLoadState('domcontentloaded').catch(() => {});
+        if (debug) logger.success(`Abierto en nueva pestaña: ${newPage.url()}`);
+        return;
+      }
+
+      // Si no abre pestaña nueva, esperamos a que haya algún cambio (URL o carga)
+      await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+      await this.page.waitForTimeout(500);
+
+      const afterUrl = this.page.url();
+      if (afterUrl !== beforeUrl) {
+        if (debug) logger.success(`Navegación detectada: ${beforeUrl} → ${afterUrl}`);
+        return;
+      }
+
+      // Último recurso: disparar click vía DOM (evita algunas capas con listeners raros)
+      if (debug) logger.warn(`No se detectó navegación tras el click (${name}). Intentando click vía DOM...`);
+      await target.dispatchEvent('click');
+      await this.page.waitForTimeout(750);
+      if (debug) {
+        const afterUrl2 = this.page.url();
+        logger.info(`URL tras click DOM: ${afterUrl2}`);
+      }
+    };
+
+    let lastError: unknown = null;
+    for (const c of candidates) {
+      try {
+        await tryClick(c.name, c.locator);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (debug) logger.warn(`No funcionó ${c.name}. Probando siguiente opción...`);
+      }
+    }
+
+    throw new Error(`No se pudo clicar "Ver todos los coches". Último error: ${String(lastError)}`);
   }
 }

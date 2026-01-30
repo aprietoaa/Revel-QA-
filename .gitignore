@@ -7,3 +7,6 @@ tests/fixtures/
 
 # Archivos generados por TypeScript
 dist/
+
+# Capturas de fallos de tests
+tests/artifacts/

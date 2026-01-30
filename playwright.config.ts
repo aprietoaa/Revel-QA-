@@ -7,7 +7,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     headless: false,
-    viewport: { width: 1280, height: 720 },
+    viewport: { width: 1280, height: 1024 },
     browserName: 'chromium',
     channel: 'chrome',
     launchOptions: {

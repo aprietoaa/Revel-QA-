@@ -26,6 +26,14 @@ npm test -- tests/specs/login.spec.ts
 # Test 2: login fallido con OTP incorrecto (no toca cookies)
 npm test -- tests/specs/login-fail-otp.spec.ts
 
+# Test 3: ver todos los coches (usa cookies si existen; si no, hace login)
+npm run test:cars -- --headed
+
+# (Opcional) Si los botones no se encuentran por texto/role, puedes forzar selectores estables:
+# BRAND_TESTID=brand-filter ALL_BRANDS_TESTID=brands-select-all npm run test:cars -- --headed
+# o con locator directo:
+# BRAND_LOCATOR='css=[data-testid="brand-filter"]' ALL_BRANDS_LOCATOR='css=[data-testid="brands-select-all"]' npm run test:cars -- --headed
+
 # Con interfaz visible (headed)
 npm test -- tests/specs/login.spec.ts --headed
 
@@ -62,6 +70,20 @@ El test `login-fail-otp.spec.ts` valida el escenario **KO** de OTP incorrecto **
 
 > Nota: si el sistema deja pasar OTPs incorrectos, este test fallará y nos servirá como señal de que el entorno no está validando OTP.
 
+## Flujo del test 3 (Ver todos los coches)
+
+El test `view-all-cars.spec.ts` documenta cada paso en la terminal (con `test.step`):
+
+1. **Cargar cookies guardadas (si existen)** – Intenta cargar cookies de sesión guardadas previamente
+2. **Verificar si la sesión es válida** – Comprueba si la sesión es válida navegando a una página protegida
+3. **Asegurar sesión válida (login si hace falta)** – Si no hay cookies válidas, hace login completo; si no, va al dashboard
+4. **Abrir "Ver todos los coches"** – Pulsa en el enlace para entrar al listado de coches
+5. **Abrir filtro "Marca"** – Pulsa en Marca para abrir el desplegable del filtro
+6. **Pulsar "Ver todas las marcas"** – Pulsa en "Ver todas las marcas" dentro del desplegable
+7. **Pulsar en Marca de nuevo (reabrir desplegable)** *(workaround)* – Tras "Ver todas las marcas" el desplegable se cierra; se vuelve a pulsar en Marca para reabrir (ver [Bugs conocidos](#bugs-conocidos-qa))
+8. **Seleccionar marca Opel** – Pulsa en la marca Opel
+9. **Mantener la página abierta (antes de cerrar)** – Espera ENTER o temporizador configurable
+
 ### Sistema de cookies/sesión
 
 El test usa un **sistema de gestión de cookies** para evitar resolver el captcha en cada ejecución:
@@ -82,10 +104,12 @@ tests/
   fixtures/
     cookies.json    # Cookies de sesión guardadas (no se sube al repo)
   pages/
-    login-page.ts   # Page Object: selectores y acciones del login
+    login-page.ts   # Page Object: login y "Ver todos los coches"
+    cars-page.ts    # Page Object: filtro Marca, Ver todas las marcas, Seleccionar todas las marcas
   specs/
     login.spec.ts           # Test: flujo de login usando LoginPage
     login-fail-otp.spec.ts  # Test: login fallido (OTP incorrecto) — no toca cookies
+    view-all-cars.spec.ts   # Test: navegar a "Ver todos los coches" (reutiliza cookies si existen)
   utils/
     cookies.ts      # Utilidades para guardar/cargar cookies
 ```
@@ -93,6 +117,16 @@ tests/
 - **Page Object** (`login-page.ts`): selectores en `SELECTORS`, métodos por paso (goto, fillPhone, clickContinueWhenEnabled, waitForOtpStepReady, fillOtp, tryAcceptCookieConsent, isSessionValid, performFullLogin).
 - **Utils** (`cookies.ts`): funciones para guardar/cargar cookies de sesión.
 - **Specs**: orquestan los pasos llamando al Page Object; cada paso va envuelto en `test.step()` para que se vea en la terminal.
+
+## Bugs conocidos (QA)
+
+Se documentan aquí comportamientos erróneos de la aplicación detectados durante las pruebas E2E, para trazabilidad y para que el equipo de desarrollo pueda corregirlos.
+
+### Filtro Marca: desplegable se cierra al pulsar "Ver todas las marcas"
+
+- **Qué ocurre**: Al pulsar en "Ver todas las marcas" dentro del filtro Marca, el filtro se aplica pero el desplegable se cierra. Para ver la lista de marcas hay que pulsar de nuevo en "Marca" para reabrir el desplegable.
+- **Comportamiento esperado**: El desplegable debería permanecer abierto (o abrir la vista "todas las marcas") sin cerrarse.
+- **Workaround en el test**: En `view-all-cars.spec.ts`, el **paso 7** ("Pulsar en Marca de nuevo") vuelve a pulsar en "Marca" en la misma página para reabrir el desplegable y poder continuar con el paso 8 ("Seleccionar todas las marcas").
 
 ## Configuración
 
