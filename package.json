@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "clean:cookies": "node dist/tests/utils/delete-cookies.js"
   },
   "keywords": [],
   "author": "",
@@ -11,6 +12,7 @@
   "description": "",
   "devDependencies": {
     "@playwright/test": "^1.58.0",
-    "@types/node": "^25.1.0"
+    "@types/node": "^25.1.0",
+    "ts-node": "^10.9.1"
   }
 }

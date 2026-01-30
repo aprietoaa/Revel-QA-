@@ -11,11 +11,49 @@ const SELECTORS = {
   otpStepIndicator: 'xpath=/html/body/div[3]/div/div/div/div/div/div[2]/div/div[1]/div[3]/p[1]',
 } as const;
 
+/** URLs del flujo de login */
+const URLS = {
+  login: 'https://driverevel.com/login',
+  /** URL para verificar si la sesión es válida (área protegida después del login) */
+  dashboard: 'https://driverevel.com', // Ajustar según la URL real del dashboard
+} as const;
+
 export class LoginPage {
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto('https://driverevel.com/login');
+    await this.page.goto(URLS.login);
+  }
+
+  /**
+   * Verifica si la sesión actual es válida navegando a una página protegida.
+   * Retorna true si está logueado (no redirige al login), false si necesita login.
+   */
+  async isSessionValid(timeout = 10_000): Promise<boolean> {
+    try {
+      await this.page.goto(URLS.dashboard, { waitUntil: 'domcontentloaded', timeout });
+      // Si estamos en login, la sesión no es válida
+      const currentUrl = this.page.url();
+      if (currentUrl.includes('/login')) {
+        return false;
+      }
+      // Si no redirige a login, asumimos que la sesión es válida
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Ejecuta el flujo completo de login: teléfono → captcha → OTP → cookies.
+   */
+  async performFullLogin(phone: string, otp: string): Promise<void> {
+    await this.goto();
+    await this.fillPhone(phone);
+    await this.clickContinueWhenEnabled();
+    await this.waitForOtpStepReady();
+    await this.fillOtp(otp);
+    await this.tryAcceptCookieConsent();
   }
 
   async fillPhone(phone: string) {
@@ -64,9 +102,16 @@ export class LoginPage {
     await targetInput.fill(code);
   }
 
-  async acceptCookieConsent(timeout = 15_000) {
+  async tryAcceptCookieConsent(timeout = 5_000): Promise<boolean> {
     const acceptButton = this.page.locator('#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll');
-    await expect(acceptButton).toBeVisible({ timeout });
-    await acceptButton.click();
+    try {
+      await acceptButton.waitFor({ state: 'visible', timeout });
+      await acceptButton.click();
+      console.log('  ✓ Cookies aceptadas (popup visible)');
+      return true;
+    } catch (error) {
+      console.log('  — Popup de cookies no visible, continuando...');
+      return false;
+    }
   }
 }
