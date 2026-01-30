@@ -622,15 +622,13 @@ export class CarsPage {
     return items.map((x) => x.model);
   }
 
-  /** Hace scroll para que todos los coches del listado (incl. el que está más abajo) sean visibles. */
+  /** Hace un scroll suave para que el listado de coches quede visible (sin saltos bruscos). */
   async scrollResultsIntoView(): Promise<void> {
-    await this.page.waitForTimeout(400);
-    await this.page.evaluate(() => window.scrollBy(0, 400));
-    await this.page.waitForTimeout(300);
-    await this.page.evaluate(() => window.scrollBy(0, 400));
-    await this.page.waitForTimeout(300);
-    await this.page.evaluate(() => window.scrollBy(0, 300));
+    await this.page.waitForTimeout(150);
+    await this.page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
     await this.page.waitForTimeout(200);
+    await this.page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
+    await this.page.waitForTimeout(150);
   }
 
   /** Patrón para extraer precio: "299 €/mes", "299€", "299 €", etc. */
@@ -674,7 +672,7 @@ export class CarsPage {
       for (let i = 0; i < count; i += 1) {
         const card = cards.nth(i);
         await card.first().scrollIntoViewIfNeeded().catch(() => {});
-        await this.page.waitForTimeout(200);
+        await this.page.waitForTimeout(60);
         const text = await card.first().innerText().catch(() => '');
         const textClean = text.replace(CarsPage.MODEL_CLEAN, ' ').replace(/\s+/g, ' ').trim();
         const lines = text.trim().split(/\n/).map((l) => l.trim()).filter(Boolean);
@@ -836,6 +834,87 @@ export class CarsPage {
 
     logger.warn('No se encontraron modelos con precio visibles.');
     return [];
+  }
+
+  /**
+   * Pulsa en la card del primer coche listado (por modelo, ej. "Opel Corsa").
+   * No se filtra por precio para que siga funcionando cuando el precio cambie (322€/mes hoy, otro mañana).
+   * Se busca la primera card que contiene el modelo y un precio (€ o /mes) para no pulsar otro elemento.
+   */
+  async clickFirstVisibleCar(options?: {
+    timeout?: number;
+    locatorOverride?: string;
+    /** Modelo del primer ítem del listado (ej. "Opel Corsa"); el precio no se usa en el locator */
+    firstListedModel?: string;
+    firstListedPrice?: string;
+  }): Promise<void> {
+    const timeout = options?.timeout ?? 10_000;
+    const clickOpt = { timeout: 5_000, noWaitAfter: true } as const;
+    const model = (options?.firstListedModel ?? '').trim();
+    const priceStr = (options?.firstListedPrice ?? '').trim();
+
+    const locatorOverride = options?.locatorOverride ?? process.env.FIRST_CAR_LOCATOR;
+    if (locatorOverride) {
+      const selector =
+        locatorOverride.startsWith('/') || locatorOverride.startsWith('(/')
+          ? `xpath=${locatorOverride}`
+          : locatorOverride;
+      const target = this.page.locator(selector).first();
+      await expect(target).toBeVisible({ timeout });
+      await target.click(clickOpt);
+      logger.success('Coche seleccionado.');
+      return;
+    }
+
+    if (!model) {
+      throw new Error('clickFirstVisibleCar: indica firstListedModel (ej. "Opel Corsa").');
+    }
+
+    const reModel = new RegExp(model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const hasPrice = /\d|€|\/mes/i;
+    const fastTimeout = 2_000;
+    const cardCandidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
+      { name: 'link', locator: this.page.getByRole('link', { name: reModel }) },
+      { name: 'article', locator: this.page.getByRole('article').filter({ hasText: reModel }).filter({ hasText: hasPrice }) },
+      { name: 'a coches', locator: this.page.locator('a[href*="coches"], a[href*="car"]').filter({ hasText: reModel }).filter({ hasText: hasPrice }) },
+      { name: 'listitem', locator: this.page.getByRole('listitem').filter({ hasText: reModel }).filter({ hasText: hasPrice }) },
+    ];
+
+    for (const c of cardCandidates) {
+      try {
+        const first = c.locator.first();
+        await expect(first).toBeVisible({ timeout: fastTimeout });
+        await first.click(clickOpt);
+        logger.success(`Pulsado en: ${model}${priceStr ? ` (${priceStr})` : ''}.`);
+        return;
+      } catch {
+        // siguiente candidato
+      }
+    }
+
+    const textFallback = this.page.getByText(reModel).first();
+    try {
+      await expect(textFallback).toBeVisible({ timeout: fastTimeout });
+      const ancestor = textFallback.locator('xpath=ancestor::*[self::a or self::article or self::button or @role="button" or @role="link"][1]');
+      if ((await ancestor.count()) > 0) {
+        await ancestor.first().click(clickOpt);
+      } else {
+        await textFallback.click(clickOpt);
+      }
+      logger.success(`Pulsado en: ${model}.`);
+      return;
+    } catch {
+      try {
+        const first = cardCandidates[0].locator.first();
+        await first.click({ ...clickOpt, force: true });
+        logger.success(`Pulsado en: ${model} (force).`);
+        return;
+      } catch {
+        // ignore
+      }
+    }
+
+    throw new Error(`No se encontró la card del coche "${model}".`);
   }
 
   /** Devuelve solo entradas que son coches (marca + precio), máximo 4 cuando hay marca. */

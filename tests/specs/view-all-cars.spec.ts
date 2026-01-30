@@ -53,6 +53,8 @@ const STEPS = {
   listModels: 'Listar los modelos visibles (Opel Corsa, Opel Frontera, Opel MOKA, etc.)',
   exchangeType: 'Pulsar en tipo de cambio',
   selectManualTransmission: 'Seleccionar cambio manual',
+  listModelsManual: 'Listar coches con cambio manual encontrados (repetir paso 9)',
+  clickFirstCar: 'Seleccionar el coche',
   keepOpen: 'Mantener la página abierta (antes de cerrar)',
 } as const;
 
@@ -62,7 +64,8 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
   const loginPage = new LoginPage(page);
   const carsPage = new CarsPage(page);
   let needsLogin = true;
-  const totalSteps = 12;
+  let modelsManual: Array<{ model: string; price: string }> = [];
+  const totalSteps = 14;
 
   await test.step(STEPS.loadCookies, async () => {
     logger.step(1, totalSteps, STEPS.loadCookies);
@@ -193,8 +196,29 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     logger.success('Manual seleccionado en tipo de cambio.');
   });
 
+  await test.step(STEPS.listModelsManual, async () => {
+    logger.step(12, totalSteps, STEPS.listModelsManual);
+    await page.waitForTimeout(800);
+    modelsManual = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel' });
+    logger.info(`Coches con cambio manual encontrados (${modelsManual.length}):`);
+    modelsManual.forEach((item, i) => logger.muted(`  ${i + 1}. ${item.model} - ${item.price}`));
+    logger.success('Listado de coches con cambio manual obtenido.');
+  });
+
+  await test.step(STEPS.clickFirstCar, async () => {
+    logger.step(13, totalSteps, STEPS.clickFirstCar);
+    const first = modelsManual[0];
+    if (!first) throw new Error('No hay coches en el listado para pulsar.');
+    await carsPage.clickFirstVisibleCar({
+      firstListedModel: first.model,
+      firstListedPrice: first.price,
+      locatorOverride: process.env.FIRST_CAR_LOCATOR,
+    });
+    logger.success(`Pulsado en: ${first.model} - ${first.price}.`);
+  });
+
   await test.step(STEPS.keepOpen, async () => {
-    logger.step(12, totalSteps, STEPS.keepOpen);
+    logger.step(14, totalSteps, STEPS.keepOpen);
     const mode = String(process.env.KEEP_OPEN_MODE ?? 'manual').toLowerCase();
     if (mode === 'manual') {
       if (process.stdin.isTTY) {
