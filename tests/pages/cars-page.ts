@@ -622,13 +622,12 @@ export class CarsPage {
     return items.map((x) => x.model);
   }
 
-  /** Hace un scroll suave para que el listado de coches quede visible (sin saltos bruscos). */
-  async scrollResultsIntoView(): Promise<void> {
-    await this.page.waitForTimeout(150);
-    await this.page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
-    await this.page.waitForTimeout(200);
-    await this.page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
-    await this.page.waitForTimeout(150);
+  /** Hace scroll para que el listado de coches quede visible. Opción instant (rápido) o smooth. */
+  async scrollResultsIntoView(options?: { behavior?: 'auto' | 'smooth' }): Promise<void> {
+    const behavior = options?.behavior ?? 'auto';
+    await this.page.waitForTimeout(80);
+    await this.page.evaluate((b: ScrollBehavior) => window.scrollBy({ top: 450, behavior: b }), behavior);
+    await this.page.waitForTimeout(120);
   }
 
   /** Patrón para extraer precio: "299 €/mes", "299€", "299 €", etc. */
@@ -672,7 +671,7 @@ export class CarsPage {
       for (let i = 0; i < count; i += 1) {
         const card = cards.nth(i);
         await card.first().scrollIntoViewIfNeeded().catch(() => {});
-        await this.page.waitForTimeout(60);
+        await this.page.waitForTimeout(25);
         const text = await card.first().innerText().catch(() => '');
         const textClean = text.replace(CarsPage.MODEL_CLEAN, ' ').replace(/\s+/g, ' ').trim();
         const lines = text.trim().split(/\n/).map((l) => l.trim()).filter(Boolean);
@@ -744,10 +743,11 @@ export class CarsPage {
       { name: 'div con título + precio (grid)', locator: this.page.locator('div').filter({ hasText: CarsPage.PRICE_PATTERN }) },
     ];
 
+    const candidateTimeout = Math.min(timeout, 3_000);
     for (const c of cardCandidates) {
       try {
         const loc = brandRe ? c.locator.filter({ hasText: brandRe }) : c.locator;
-        await loc.first().waitFor({ state: 'visible', timeout: 5_000 });
+        await loc.first().waitFor({ state: 'visible', timeout: candidateTimeout });
         const result = CarsPage.limitToCarsOnly(await extractFromCards(loc), brandName);
         if (result.length > 0) {
           if (debug) logger.info(`getVisibleModelsWithPrices: ${result.length} con ${c.name}`);

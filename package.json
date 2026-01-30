@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "playwright test",
+    "test": "playwright test --workers=1",
     "clean:cookies": "node dist/tests/utils/delete-cookies.js",
     "test:cars": "playwright test --workers=1 tests/specs/view-all-cars.spec.ts"
   },

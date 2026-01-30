@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/login-page';
 import { CarsPage } from '../pages/cars-page';
@@ -30,8 +32,8 @@ async function stepCheckpoint(label: string): Promise<void> {
 }
 
 async function keepPageOpenByTimer(page: { waitForTimeout: (ms: number) => Promise<void> }) {
-  const keepOpenSeconds = Number(process.env.KEEP_OPEN_SECONDS ?? '900');
-  const seconds = Number.isFinite(keepOpenSeconds) && keepOpenSeconds > 0 ? keepOpenSeconds : 900;
+  const keepOpenSeconds = Number(process.env.KEEP_OPEN_SECONDS ?? '20');
+  const seconds = Number.isFinite(keepOpenSeconds) && keepOpenSeconds > 0 ? keepOpenSeconds : 20;
   logger.info(`Manteniendo la página abierta ${seconds}s... (configurable con KEEP_OPEN_SECONDS)`);
   for (let i = seconds; i >= 1; i -= 1) {
     if (i <= 10 || i % 60 === 0) {
@@ -167,7 +169,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.listModels, async () => {
     logger.step(9, totalSteps, STEPS.listModels);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
     const modelsWithPrices = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel' });
     logger.info(`Coches visibles (${modelsWithPrices.length}): Opel + modelo (Frontera, Mokka, …) y precio`);
     modelsWithPrices.forEach((item, i) => logger.muted(`  ${i + 1}. ${item.model} - ${item.price}`));
@@ -219,6 +221,25 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.keepOpen, async () => {
     logger.step(14, totalSteps, STEPS.keepOpen);
+    const now = new Date();
+    const dateTime =
+      now.getFullYear() +
+      '-' +
+      String(now.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(now.getDate()).padStart(2, '0') +
+      '-' +
+      String(now.getHours()).padStart(2, '0') +
+      '-' +
+      String(now.getMinutes()).padStart(2, '0') +
+      '-' +
+      String(now.getSeconds()).padStart(2, '0');
+    const screenshotPath = `tests/artifacts/view-all-cars-final-${dateTime}.png`;
+    fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch((e) => {
+      logger.muted(`No se pudo guardar el screenshot: ${e}`);
+    });
+    logger.success(`Screenshot guardado: ${screenshotPath}`);
     const mode = String(process.env.KEEP_OPEN_MODE ?? 'manual').toLowerCase();
     if (mode === 'manual') {
       if (process.stdin.isTTY) {
