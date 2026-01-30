@@ -51,6 +51,8 @@ const STEPS = {
   reopenBrand: 'Pulsar en Marca de nuevo (reabrir desplegable; workaround: se cierra al pulsar "Ver todas las marcas")',
   selectBrandOpel: 'Seleccionar marca Opel',
   listModels: 'Listar los modelos visibles (Opel Corsa, Opel Frontera, Opel MOKA, etc.)',
+  exchangeType: 'Pulsar en tipo de cambio',
+  selectManualTransmission: 'Seleccionar cambio manual',
   keepOpen: 'Mantener la página abierta (antes de cerrar)',
 } as const;
 
@@ -60,7 +62,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
   const loginPage = new LoginPage(page);
   const carsPage = new CarsPage(page);
   let needsLogin = true;
-  const totalSteps = 10;
+  const totalSteps = 12;
 
   await test.step(STEPS.loadCookies, async () => {
     logger.step(1, totalSteps, STEPS.loadCookies);
@@ -169,8 +171,30 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     logger.success('Listado de modelos y precios obtenido.');
   });
 
+  await test.step(STEPS.exchangeType, async () => {
+    logger.step(10, totalSteps, STEPS.exchangeType);
+    await page.waitForTimeout(400);
+    await carsPage.clickExchangeTypeFilter({
+      locatorOverride:
+        process.env.EXCHANGE_TYPE_LOCATOR ??
+        '/html/body/div[8]/div/div/div[1]/div/div/div[2]/div[5]/div[1]/p',
+      testId: process.env.EXCHANGE_TYPE_TESTID,
+    });
+    logger.success('Paso 10 OK: tipo de cambio pulsado.');
+  });
+
+  await test.step(STEPS.selectManualTransmission, async () => {
+    logger.step(11, totalSteps, STEPS.selectManualTransmission);
+    await page.waitForTimeout(100);
+    await carsPage.selectExchangeTypeOption('Manual', {
+      locatorOverride: process.env.EXCHANGE_TYPE_OPTION_LOCATOR,
+      testId: process.env.EXCHANGE_TYPE_OPTION_TESTID,
+    });
+    logger.success('Manual seleccionado en tipo de cambio.');
+  });
+
   await test.step(STEPS.keepOpen, async () => {
-    logger.step(10, totalSteps, STEPS.keepOpen);
+    logger.step(12, totalSteps, STEPS.keepOpen);
     const mode = String(process.env.KEEP_OPEN_MODE ?? 'manual').toLowerCase();
     if (mode === 'manual') {
       if (process.stdin.isTTY) {
