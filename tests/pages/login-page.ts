@@ -246,9 +246,9 @@ export class LoginPage {
         return;
       }
 
-      // Si no abre pestaña nueva, esperamos a que haya algún cambio (URL o carga)
+      // Si no abre pestaña nueva, esperamos a que la URL cambie (navegación en la misma pestaña)
       await this.page.waitForLoadState('domcontentloaded').catch(() => {});
-      await this.page.waitForTimeout(500);
+      await this.page.waitForURL((url) => url.href !== beforeUrl, { timeout: 5_000 }).catch(() => {});
 
       const afterUrl = this.page.url();
       if (afterUrl !== beforeUrl) {
@@ -259,7 +259,7 @@ export class LoginPage {
       // Último recurso: disparar click vía DOM (evita algunas capas con listeners raros)
       if (debug) logger.warn(`No se detectó navegación tras el click (${name}). Intentando click vía DOM...`);
       await target.dispatchEvent('click');
-      await this.page.waitForTimeout(750);
+      await this.page.waitForURL((url) => url.href !== beforeUrl, { timeout: 3_000 }).catch(() => {});
       if (debug) {
         const afterUrl2 = this.page.url();
         logger.info(`URL tras click DOM: ${afterUrl2}`);

@@ -34,15 +34,24 @@ export async function stepCheckpoint(label: string): Promise<void> {
 }
 
 /**
- * Mantiene la página abierta durante X segundos (KEEP_OPEN_SECONDS, por defecto 20).
- * Útil al final del test para revisar el resultado antes de cerrar.
+ * Mantiene la página abierta durante X segundos.
+ * @param page - Página con waitForTimeout (p. ej. Playwright Page).
+ * @param overrideSeconds - Si se pasa, usa este valor; si no, usa KEEP_OPEN_SECONDS (por defecto 20).
  */
-export async function keepPageOpenByTimer(page: {
-  waitForTimeout: (ms: number) => Promise<void>;
-}): Promise<void> {
-  const keepOpenSeconds = Number(process.env.KEEP_OPEN_SECONDS ?? '20');
-  const seconds = Number.isFinite(keepOpenSeconds) && keepOpenSeconds > 0 ? keepOpenSeconds : 20;
-  logger.info(`Manteniendo la página abierta ${seconds}s... (configurable con KEEP_OPEN_SECONDS)`);
+export async function keepPageOpenByTimer(
+  page: { waitForTimeout: (ms: number) => Promise<void> },
+  overrideSeconds?: number
+): Promise<void> {
+  const fromEnv = Number(process.env.KEEP_OPEN_SECONDS ?? '20');
+  const seconds =
+    overrideSeconds !== undefined
+      ? (Number.isFinite(overrideSeconds) && overrideSeconds > 0 ? overrideSeconds : 20)
+      : (Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 20);
+  logger.info(
+    overrideSeconds !== undefined
+      ? `Manteniendo la página abierta ${seconds}s...`
+      : `Manteniendo la página abierta ${seconds}s... (configurable con KEEP_OPEN_SECONDS)`
+  );
   for (let i = seconds; i >= 1; i -= 1) {
     if (i <= 10 || i % 60 === 0) {
       logger.muted(`Se cerrará en ${i}s`);

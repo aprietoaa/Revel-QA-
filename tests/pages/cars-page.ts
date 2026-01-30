@@ -622,12 +622,11 @@ export class CarsPage {
     return items.map((x) => x.model);
   }
 
-  /** Hace scroll para que el listado de coches quede visible. Opción instant (rápido) o smooth. */
+  /** Hace scroll para que el listado de coches quede visible. Espera a que al menos una card esté visible. */
   async scrollResultsIntoView(options?: { behavior?: 'auto' | 'smooth' }): Promise<void> {
     const behavior = options?.behavior ?? 'auto';
-    await this.page.waitForTimeout(80);
     await this.page.evaluate((b: ScrollBehavior) => window.scrollBy({ top: 450, behavior: b }), behavior);
-    await this.page.waitForTimeout(120);
+    await this.page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 3_000 }).catch(() => {});
   }
 
   /** Patrón para extraer precio: "299 €/mes", "299€", "299 €", etc. */
@@ -671,7 +670,7 @@ export class CarsPage {
       for (let i = 0; i < count; i += 1) {
         const card = cards.nth(i);
         await card.first().scrollIntoViewIfNeeded().catch(() => {});
-        await this.page.waitForTimeout(25);
+        await card.first().waitFor({ state: 'visible', timeout: 1_000 }).catch(() => {});
         const text = await card.first().innerText().catch(() => '');
         const textClean = text.replace(CarsPage.MODEL_CLEAN, ' ').replace(/\s+/g, ' ').trim();
         const lines = text.trim().split(/\n/).map((l) => l.trim()).filter(Boolean);

@@ -33,6 +33,23 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
+      # Cookies: no se suben al repo. Si tienes el secreto E2E_COOKIES_BASE64 (contenido
+      # de tests/fixtures/cookies.json en base64), se restauran aquí para evitar login+captcha en CI.
+      # Cómo generarlo: tras un login exitoso en local, ejecuta en terminal:
+      #   base64 -i tests/fixtures/cookies.json | pbcopy   (Mac) o similar, y pega en GitHub Secrets.
+      # Las cookies caducan; hay que actualizar el secreto cuando la sesión expire.
+      - name: Restore cookies from secret (optional)
+        env:
+          E2E_COOKIES_BASE64: ${{ secrets.E2E_COOKIES_BASE64 }}
+        run: |
+          if [ -n "$E2E_COOKIES_BASE64" ]; then
+            mkdir -p tests/fixtures
+            echo "$E2E_COOKIES_BASE64" | base64 -d > tests/fixtures/cookies.json
+            echo "Cookies restauradas desde secreto."
+          else
+            echo "No hay secreto E2E_COOKIES_BASE64; los tests harán login desde cero (puede fallar si hay captcha)."
+          fi
+
       - name: Run E2E tests
         run: npm run test
         env:

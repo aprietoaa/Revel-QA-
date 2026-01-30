@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/login-page';
 import { PHONE, OTP } from '../config';
+import { keepPageOpenByTimer } from '../helpers/test-helpers';
 import { loadCookies, saveCookies } from '../utils/cookies';
 import { logger } from '../utils/logger';
 import { STEPS } from '../steps/login.steps';
@@ -68,14 +69,10 @@ test('Completar teléfono en driverevel login', async ({ page }) => {
     logger.muted('No se espera popup de cookies tras sesión válida');
   }
 
-  // Paso final: ya no hace falta cerrar manualmente la pestaña
+  // Paso final: mantener página abierta 5 s (misma lógica que keepPageOpenByTimer)
   await test.step(STEPS.waitClose, async () => {
     logger.step(totalSteps, totalSteps, STEPS.waitClose);
-    logger.info('Esperando 5 segundos...');
-    for (let i = 5; i >= 1; i -= 1) {
-      logger.muted(`Finaliza en ${i}s`);
-      await page.waitForTimeout(1000);
-    }
+    await keepPageOpenByTimer(page, 5);
     logger.success('Fin del test.');
   });
 });

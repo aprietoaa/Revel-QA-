@@ -6,6 +6,8 @@ export default defineConfig({
   testDir: './tests/specs',
   timeout: 30 * 1000,
   workers: 1,
+  /** En CI: reintentar hasta 2 veces si falla (reduce flakiness por red/carga). En local: 0 para ver el fallo a la primera. */
+  retries: isCI ? 2 : 0,
   /** Reporter 'list' en terminal + log por ejecución en tests/logs/ (FAIL si falla alguno) */
   reporter: [
     ['list'],

@@ -73,7 +73,6 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
   await test.step(STEPS.viewAllBrands, async () => {
     logger.step(6, totalSteps, STEPS.viewAllBrands);
     logger.info('>>> Paso 6: buscando "Ver todas las marcas"...');
-    await page.waitForTimeout(500);
     const verTodas =
       process.env.VIEW_ALL_BRANDS_LOCATOR
         ? page.locator(process.env.VIEW_ALL_BRANDS_LOCATOR).first()
@@ -86,15 +85,15 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
   await test.step(STEPS.reopenBrand, async () => {
     logger.step(7, totalSteps, STEPS.reopenBrand);
     logger.info('>>> Paso 7: pulsando en Marca de nuevo...');
-    await page.waitForTimeout(800);
     const clickOpt = { timeout: 5_000, noWaitAfter: true } as const;
     if (process.env.BRAND_LOCATOR) {
-      await page.locator(process.env.BRAND_LOCATOR).first().click({ ...clickOpt, timeout: 10_000 });
+      const marca = page.locator(process.env.BRAND_LOCATOR).first();
+      await marca.waitFor({ state: 'visible', timeout: 10_000 });
+      await marca.click({ ...clickOpt, timeout: 10_000 });
     } else {
       const marcaByIndex = page.locator('div.ShortcutsFilterBar_filters__shorcuts__V25SQ > div:nth-child(7) div.FilterShortcutButton_filter__button__ZCF57 > p').first();
       const marcaByText = page.locator('div.FilterShortcutButton_filter__button__ZCF57').filter({ has: page.locator('p', { hasText: /marca/i }) }).locator('p').first();
       try {
- 
         await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
         await marcaByIndex.click(clickOpt);
       } catch {
@@ -108,7 +107,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.selectBrandOpel, async () => {
     logger.step(8, totalSteps, STEPS.selectBrandOpel);
-    await page.waitForTimeout(400);
+    await page.getByText(/opel/i).first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {});
     await carsPage.selectBrand('Opel', {
       locatorOverride: process.env.BRAND_OPEL_LOCATOR,
       testId: process.env.BRAND_OPEL_TESTID,
@@ -118,7 +117,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.listModels, async () => {
     logger.step(9, totalSteps, STEPS.listModels);
-    await page.waitForTimeout(500);
+    await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     const modelsWithPrices = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel' });
     logger.info(`Coches visibles (${modelsWithPrices.length}): Opel + modelo (Frontera, Mokka, …) y precio`);
     modelsWithPrices.forEach((item, i) => logger.muted(`  ${i + 1}. ${item.model} - ${item.price}`));
@@ -127,7 +126,6 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.exchangeType, async () => {
     logger.step(10, totalSteps, STEPS.exchangeType);
-    await page.waitForTimeout(400);
     await carsPage.clickExchangeTypeFilter({
       locatorOverride:
         process.env.EXCHANGE_TYPE_LOCATOR ??
@@ -139,7 +137,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.selectManualTransmission, async () => {
     logger.step(11, totalSteps, STEPS.selectManualTransmission);
-    await page.waitForTimeout(100);
+    await page.getByText(/manual/i).first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
     await carsPage.selectExchangeTypeOption('Manual', {
       locatorOverride: process.env.EXCHANGE_TYPE_OPTION_LOCATOR,
       testId: process.env.EXCHANGE_TYPE_OPTION_TESTID,
@@ -149,7 +147,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.listModelsManual, async () => {
     logger.step(12, totalSteps, STEPS.listModelsManual);
-    await page.waitForTimeout(800);
+    await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     modelsManual = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel' });
     logger.info(`Coches con cambio manual encontrados (${modelsManual.length}):`);
     modelsManual.forEach((item, i) => logger.muted(`  ${i + 1}. ${item.model} - ${item.price}`));
@@ -185,7 +183,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       String(now.getSeconds()).padStart(2, '0');
     const screenshotPath = `tests/artifacts/view-all-cars-final-${dateTime}.png`;
     fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch((e) => {
       logger.muted(`No se pudo guardar el screenshot: ${e}`);
     });
