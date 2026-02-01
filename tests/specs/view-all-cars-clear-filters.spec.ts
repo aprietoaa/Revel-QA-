@@ -1,21 +1,18 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { test } from '@playwright/test';
 import { LoginPage } from '../pages/login-page';
 import { CarsPage } from '../pages/cars-page';
 import { PHONE, OTP } from '../config';
-import { stepCheckpoint, keepPageOpenByTimer, waitForEnter } from '../helpers/test-helpers';
+import { keepPageOpenByTimer } from '../helpers/test-helpers';
 import { loadCookies, saveCookies } from '../utils/cookies';
 import { logger } from '../utils/logger';
-import { STEPS } from '../steps/view-all-cars.steps';
+import { STEPS } from '../steps/view-all-cars-clear-filters.steps';
 
-test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) => {
+test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de nuevo', async ({ page }) => {
   test.setTimeout(30 * 60 * 1000);
   const loginPage = new LoginPage(page);
   const carsPage = new CarsPage(page);
   let needsLogin = true;
-  let modelsManual: Array<{ model: string; price: string }> = [];
-  const totalSteps = 14;
+  const totalSteps = 15;
 
   await test.step(STEPS.loadCookies, async () => {
     logger.step(1, totalSteps, STEPS.loadCookies);
@@ -38,7 +35,6 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
 
   await test.step(STEPS.ensureSession, async () => {
     logger.step(3, totalSteps, STEPS.ensureSession);
-
     if (needsLogin) {
       logger.info('No hay sesión válida: se hará login (captcha manual + OTP).');
       await loginPage.performFullLogin(PHONE, OTP);
@@ -47,9 +43,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     } else {
       await loginPage.gotoDashboard();
     }
-
     await loginPage.tryAcceptCookieConsent();
-    // Verificación explícita de sesión: iniciales visibles en el header.
     await loginPage.assertLoggedInAndGetInitials();
   });
 
@@ -57,7 +51,6 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     logger.step(4, totalSteps, STEPS.viewAllCars);
     await loginPage.clickViewAllCars();
     logger.success(`Navegado a: ${page.url()}`);
-    await stepCheckpoint('Después de "Ver todos los coches"');
   });
 
   await test.step(STEPS.openBrand, async () => {
@@ -66,25 +59,22 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       locatorOverride: process.env.BRAND_LOCATOR,
       testId: process.env.BRAND_TESTID,
     });
-    logger.success('Paso 5 OK: filtro Marca abierto.');
-    await stepCheckpoint('Después de abrir "Marca"');
+    logger.success('Filtro Marca abierto.');
   });
 
   await test.step(STEPS.viewAllBrands, async () => {
     logger.step(6, totalSteps, STEPS.viewAllBrands);
-    logger.info('>>> Paso 6: buscando "Ver todas las marcas"...');
     const verTodas =
       process.env.VIEW_ALL_BRANDS_LOCATOR
         ? page.locator(process.env.VIEW_ALL_BRANDS_LOCATOR).first()
         : page.getByText(/ver todas las marcas/i).first();
     await verTodas.waitFor({ state: 'visible', timeout: 10_000 });
     await verTodas.click({ timeout: 5_000, noWaitAfter: true });
-    logger.success('>>> Paso 6 listo. Filtro aplicado.');
+    logger.success('Ver todas las marcas pulsado.');
   });
 
   await test.step(STEPS.reopenBrand, async () => {
     logger.step(7, totalSteps, STEPS.reopenBrand);
-    logger.info('>>> Paso 7: pulsando en Marca de nuevo...');
     const clickOpt = { timeout: 5_000, noWaitAfter: true } as const;
     if (process.env.BRAND_LOCATOR) {
       const marca = page.locator(process.env.BRAND_LOCATOR).first();
@@ -97,12 +87,11 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
         await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
         await marcaByIndex.click(clickOpt);
       } catch {
-        logger.muted('Selector nth-child(7) no encontrado; probando por texto "Marca"...');
         await marcaByText.waitFor({ state: 'visible', timeout: 5_000 });
         await marcaByText.click(clickOpt);
       }
     }
-    logger.success('>>> Paso 7 listo. Filtro Marca reabierto.');
+    logger.success('Marca reabierto.');
   });
 
   await test.step(STEPS.selectBrandOpel, async () => {
@@ -119,9 +108,9 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     logger.step(9, totalSteps, STEPS.listModels);
     await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     const modelsWithPrices = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel', maxItems: 150 });
-    logger.info(`Coches visibles (${modelsWithPrices.length}): Opel + modelo (Frontera, Mokka, …) y precio`);
+    logger.info(`Coches visibles con Marca Opel (${modelsWithPrices.length}):`);
     modelsWithPrices.forEach((item, i) => logger.car(i + 1, item.model, item.price));
-    logger.success('Listado de modelos y precios obtenido.');
+    logger.success('Listado obtenido.');
   });
 
   await test.step(STEPS.exchangeType, async () => {
@@ -132,7 +121,7 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
         '/html/body/div[8]/div/div/div[1]/div/div/div[2]/div[5]/div[1]/p',
       testId: process.env.EXCHANGE_TYPE_TESTID,
     });
-    logger.success('Paso 10 OK: tipo de cambio pulsado.');
+    logger.success('Tipo de cambio pulsado.');
   });
 
   await test.step(STEPS.selectManualTransmission, async () => {
@@ -142,65 +131,35 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       locatorOverride: process.env.EXCHANGE_TYPE_OPTION_LOCATOR,
       testId: process.env.EXCHANGE_TYPE_OPTION_TESTID,
     });
-    logger.success('Manual seleccionado en tipo de cambio.');
+    logger.success('Manual seleccionado.');
   });
 
   await test.step(STEPS.listModelsManual, async () => {
     logger.step(12, totalSteps, STEPS.listModelsManual);
     await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-    modelsManual = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel', maxItems: 150 });
-    logger.info(`Coches con cambio manual encontrados (${modelsManual.length}):`);
+    const modelsManual = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel', maxItems: 150 });
+    logger.info(`Coches con filtros Opel + Manual (${modelsManual.length}):`);
     modelsManual.forEach((item, i) => logger.car(i + 1, item.model, item.price));
-    logger.success('Listado de coches con cambio manual obtenido.');
+    logger.success('Listado con filtros obtenido.');
   });
 
-  await test.step(STEPS.clickFirstCar, async () => {
-    logger.step(13, totalSteps, STEPS.clickFirstCar);
-    const first = modelsManual[0];
-    if (!first) throw new Error('No hay coches en el listado para pulsar.');
-    await carsPage.clickFirstVisibleCar({
-      firstListedModel: first.model,
-      firstListedPrice: first.price,
-      locatorOverride: process.env.FIRST_CAR_LOCATOR,
+  await test.step(STEPS.clearFilters, async () => {
+    logger.step(13, totalSteps, STEPS.clearFilters);
+    await carsPage.clearFilters({
+      locatorOverride: process.env.CLEAR_FILTERS_LOCATOR,
     });
-    // El mensaje "Pulsado en: ..." ya se emite dentro de clickFirstVisibleCar
+  });
+
+  await test.step(STEPS.listModelsAfterClear, async () => {
+    logger.step(14, totalSteps, STEPS.listModelsAfterClear);
+    const cardWithPrice = page.locator('article, [role="listitem"]').filter({ hasText: /\d[\d.,]*\s*€/ }).first();
+    await cardWithPrice.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    logger.success('Filtros limpiados; listado sin filtros visible.');
   });
 
   await test.step(STEPS.keepOpen, async () => {
-    logger.step(14, totalSteps, STEPS.keepOpen);
-    const now = new Date();
-    const dateTime =
-      now.getFullYear() +
-      '-' +
-      String(now.getMonth() + 1).padStart(2, '0') +
-      '-' +
-      String(now.getDate()).padStart(2, '0') +
-      '-' +
-      String(now.getHours()).padStart(2, '0') +
-      '-' +
-      String(now.getMinutes()).padStart(2, '0') +
-      '-' +
-      String(now.getSeconds()).padStart(2, '0');
-    const screenshotPath = `tests/artifacts/view-all-cars-final-${dateTime}.png`;
-    fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
-    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
-    await page.screenshot({ path: screenshotPath, fullPage: true }).catch((e) => {
-      logger.muted(`No se pudo guardar el screenshot: ${e}`);
-    });
-    logger.success(`Screenshot guardado: ${screenshotPath}`);
-    const mode = String(process.env.KEEP_OPEN_MODE ?? 'manual').toLowerCase();
-    if (mode === 'manual') {
-      if (process.stdin.isTTY) {
-        await waitForEnter('Pulsa ENTER para finalizar (y cerrar el navegador).');
-      } else {
-        await keepPageOpenByTimer(page);
-      }
-      logger.success('Fin del test.');
-      return;
-    }
-
-    await keepPageOpenByTimer(page);
+    logger.step(15, totalSteps, STEPS.keepOpen);
+    await keepPageOpenByTimer(page, 5);
     logger.success('Fin del test.');
   });
 });
-

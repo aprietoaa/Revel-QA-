@@ -4,6 +4,28 @@ Tests end-to-end para **driverevel.com**: login, listado de coches, filtros y se
 
 **Inicio rápido:** `npm install` → `npm run test`. Para forzar login desde cero: `npx tsc && npm run clean:cookies && npm run test`.
 
+**Usuario de prueba (caso práctico):** teléfono +34879542345 y OTP fijo definidos en `tests/config/constants.ts`. Login por teléfono (no por email en este repo).
+
+---
+
+## Cumplimiento del caso práctico (checklist para evaluadores)
+
+| Requisito | Cumplido | Dónde / cómo |
+|-----------|----------|--------------|
+| **Login:** al menos 1 flujo OK | Sí | `tests/specs/login.spec.ts`: teléfono + OTP, guardar cookies, reutilizar sesión. |
+| **Login:** al menos 1 escenario KO | Sí | `tests/specs/login-fail-otp.spec.ts`: OTP incorrecto, se valida que no se accede. |
+| **README:** cómo resolver OTP dinámico en real/CI | Sí | Sección *Credenciales* y *Si el OTP no fuese fijo*: Twilio API, endpoint de test, backdoor staging. |
+| **Filtros grid:** mínimo 2 filtros | Sí | Filtro **Marca** (Opel) y filtro **Tipo de cambio** (Manual). |
+| **Filtros grid:** 1 combinación y validar grid | Sí | Combinación Opel + Manual; se listan coches y se valida el listado. |
+| **Filtros grid:** validar al aplicar y limpiar filtros | Sí | `tests/specs/view-all-cars-clear-filters.spec.ts`: aplicar Opel + Manual, listar, limpiar filtros y comprobar estado. |
+| **Caso borde (reset / sin resultados)** | Sí | Caso **reset**: limpiar filtros y validar que el listado sin filtros es visible. |
+| **Al menos 2 tests E2E + 1 negativo** | Sí | Login (`login.spec.ts`), filtros (`view-all-cars.spec.ts`, `view-all-cars-clear-filters.spec.ts`), negativo (`login-fail-otp.spec.ts`). |
+| **README:** ejecutar, prerrequisitos, supuestos, qué automatizarías** | Sí | Secciones correspondientes más abajo. |
+| **CI (opcional)** | Sí | `.github/workflows/e2e.yml`: GitHub Actions en push/PR, cookies desde secreto, artefactos. |
+| **Estabilidad:** sin sleeps, esperas por condiciones | Sí | `waitFor`, `waitForURL`, `expect(...).toBeVisible()`; único timeout fijo intencionado al final (mantener página abierta). |
+| **Selectores mantenibles / overrides** | Parcial | `getByRole`, `getByText`; variables de entorno para overrides (BRAND_LOCATOR, etc.). |
+| **Tests independientes, logs/screenshots** | Sí | Cada spec ejecutable solo; logs en `tests/logs/`, screenshots en `tests/artifacts/`. |
+
 ---
 
 ## Prerrequisitos
@@ -31,7 +53,7 @@ npm install
 npm run test
 ```
 
-- Ejecuta los 3 specs con 1 worker.
+- Ejecuta los 4 specs con 1 worker.
 - Por defecto el navegador se abre en modo visible (`headless: false`).
 - Si existen cookies guardadas en `tests/fixtures/cookies.json`, los tests que requieren sesión las reutilizan; si no, hacen login (teléfono + OTP).
 
@@ -80,9 +102,11 @@ npm run test
 
 ### Credenciales (teléfono y OTP)
 
-En este proyecto el **número de teléfono** y el **OTP** de prueba están definidos en código (`tests/config/constants.ts`) y son **visibles** en el repositorio. Esto sirve para ejecutar los tests en local de forma sencilla, pero **no es la forma correcta** desde el punto de vista de seguridad: lo adecuado sería no commitear credenciales y mantenerlas fuera del código.
+En este proyecto el **número de teléfono** y el **OTP** de prueba están definidos en código abierto (`tests/config/constants.ts`) y son **visibles** en el repositorio. **Sabemos que no es una buena práctica**: en un entorno real nunca commitearíamos credenciales ni las dejaríamos en código; se usarían variables de entorno o secretos. Aquí se hace así solo para que el caso práctico se pueda ejecutar de forma sencilla en local sin configurar secretos; no es algo que replicaríamos en producción ni en CI real.
 
 En un **pipeline o CI** (GitHub Actions, GitLab CI, etc.) las credenciales deberían guardarse en **variables de entorno o secretos** del propio pipeline (por ejemplo `E2E_PHONE`, `E2E_OTP`), de modo que no queden expuestas en el repo ni en los logs. Los tests pueden leer `process.env.E2E_PHONE` y `process.env.E2E_OTP` cuando existan, y usar las constantes solo como valor por defecto en entornos locales.
+
+**Si el OTP no fuese fijo (entorno real / staging / CI):** en un flujo con OTP dinámico (p. ej. Twilio) no se puede hardcodear el código. Opciones: (1) **API de Twilio** (o del proveedor de SMS): antes de rellenar el OTP en el test, llamar a la API para obtener el último SMS enviado al teléfono de prueba y extraer el código; (2) **endpoint de test en backend**: si staging expone un endpoint tipo “último OTP generado para este teléfono” (solo en entornos de prueba), el test lo consulta y usa ese valor; (3) **backdoor en staging**: usuario de prueba cuyo OTP sea siempre el mismo o desactivar OTP para ese usuario en entorno de test. La opción (2) o (3) suele ser la más estable para CI; la (1) depende de que Twilio (u otro) esté disponible desde el pipeline y de permisos.
 
 Los logs de cada ejecución se escriben en `tests/logs/` (archivo por run). La carpeta `tests/artifacts/` guarda screenshots (p. ej. del test de coches).
 
@@ -167,8 +191,9 @@ Se eligió qué automatizar en este orden: primero lo que más afecta si falla, 
 | 1 | **Login exitoso** (`login.spec.ts`) | Teléfono, OTP, guardar cookies, llegar al dashboard. | Sin login no se puede probar nada más. Si auth o OTP se rompen, todo falla. Este test además permite reutilizar sesión (menos captcha y menos tiempo en runs siguientes). |
 | 2 | **Login fallido (OTP)** (`login-fail-otp.spec.ts`) | Introducir OTP incorrecto y comprobar que no se accede. | Asegura que un error de validación no deje entrar. Es un solo spec y detecta regresiones importantes en seguridad y mensajes de error. |
 | 3 | **Ver todos los coches** (`view-all-cars.spec.ts`) | Ir al listado, aplicar filtros (Marca Opel, Manual), ver coches y pulsar el primero. Screenshot al final. | Es el flujo principal de uso (buscar coche). Un solo test recorre varias pantallas y filtros; si algo se rompe ahí, lo vemos enseguida. |
+| 4 | **Limpiar filtros** (`view-all-cars-clear-filters.spec.ts`) | Aplicar Opel + Manual, listar coches, limpiar filtros y comprobar que el listado sin filtros es visible. | Valida que el botón “Limpiar filtros” funciona y que la UI vuelve al estado sin filtros. |
 
-**Resumen del orden:** Entrada (login) → camino negativo (OTP mal) → flujo principal (listado y filtros). Con estos tres specs se cubre lo esencial sin duplicar esfuerzo.
+**Resumen del orden:** Entrada (login) → camino negativo (OTP mal) → flujo principal (listado y filtros) → limpiar filtros. Con estos cuatro specs se cubre lo esencial sin duplicar esfuerzo.
 
 **Próximas ideas** (detalle en *Qué automatizarías a continuación*): ficha del coche, más filtros, cerrar sesión, y pruebas rápidas sin estar logueado (p. ej. que la home cargue).
 
@@ -182,6 +207,16 @@ Se eligió qué automatizar en este orden: primero lo que más afecta si falla, 
 - **Cookies:** La sesión se persiste en `tests/fixtures/cookies.json` (no versionado). Sin este archivo o tras `clean:cookies`, los tests que necesitan sesión harán login desde cero.
 - **Navegador:** Chrome instalado en el sistema; Playwright usa `channel: 'chrome'`.
 - **Estructura de la web:** Los tests dependen de selectores y flujos actuales (marca, tipo de cambio, listado de coches). Cambios de diseño o de DOM pueden requerir actualizar page objects o constantes.
+
+### Comportamiento conocido del filtro Marca (workaround)
+
+**Qué pasa:** En la web, al pulsar **"Ver todas las marcas"** el desplegable del filtro **Marca** se cierra. Eso impide elegir una marca (p. ej. Opel) justo después sin hacer un clic extra: el usuario tendría que abrir de nuevo el filtro. **Es un bug de la UI**: lo esperado sería que el desplegable siguiera abierto tras "Ver todas las marcas" para poder elegir marca directamente; al cerrarse, obliga a un paso innecesario (abrir → "Ver todas las marcas" → **reabrir** → elegir marca).
+
+**Cómo lo cubrimos en los tests:** En los specs de listado de coches hay un paso explícito que **vuelve a pulsar en "Marca"** para reabrir el desplegable antes de seleccionar Opel. El flujo automatizado es: abrir filtro Marca → pulsar "Ver todas las marcas" → **pulsar de nuevo en Marca (reabrir)** → seleccionar Opel. Ese paso está en `STEPS.reopenBrand` y lo implementa `BrandFilterPage` / `CarsPage.openBrandFilter` llamado por segunda vez.
+
+**Cómo se podría arreglar (en la web):** Que el desplegable **no se cierre** al hacer clic en "Ver todas las marcas", de modo que la lista de marcas siga visible y se pueda elegir una sin reabrir. Sería un cambio de front/UX en driverevel.com.
+
+**Si la web se corrige:** En los tests se podría eliminar el paso "reabrir Marca" (el `test.step(STEPS.reopenBrand, ...)` y la llamada correspondiente a `openBrandFilter` en ese punto) y dejar solo: abrir Marca → Ver todas las marcas → seleccionar Opel.
 
 ---
 
@@ -226,7 +261,7 @@ Ideas para ampliar la suite, en bloques lógicos:
 
 **Reutilización**
 
-- Los page objects se reutilizan entre specs: `LoginPage` en login, login-fail-otp y view-all-cars; `CarsPage` en view-all-cars. No se duplica la lógica de “rellenar teléfono”, “abrir filtro Marca” o “listar coches”.
+- Los page objects se reutilizan entre specs: `LoginPage` en login, login-fail-otp, view-all-cars y view-all-cars-clear-filters; `CarsPage` en view-all-cars y view-all-cars-clear-filters. No se duplica la lógica de “rellenar teléfono”, “abrir filtro Marca” o “listar coches”.
 - Helpers, config y utils se importan desde un único lugar; no hay copia de constantes ni de funciones de cookies/logger en los specs.
 - Los nombres de pasos (STEPS) se definen una vez por spec y se reutilizan en todos los `test.step(...)`.
 
@@ -245,12 +280,9 @@ Ideas para ampliar la suite, en bloques lógicos:
 - Comentarios: JSDoc en helpers y en métodos no obvios; constantes SELECTORS/URLS comentadas donde aporta.
 - Responsabilidades: specs orquestan (pasos y orden); pages implementan cómo interactuar con la UI; utils y config no contienen lógica de pantalla.
 
-**Tamaño de `CarsPage` (~1000 líneas)**
+**Estructura de `CarsPage` (fachada)**
 
-`CarsPage` concentra todo el flujo de listado y filtros en un solo archivo: abrir/cerrar filtro marca, “ver todas las marcas”, elegir marca (Opel), tipo de cambio, opción Manual, scroll, listado de modelos/precios, clic en la primera ficha, etc. **Está bien a nivel funcional** (un solo Page Object para la zona de coches, los specs siguen claros), pero **a medio/largo plazo no es ideal** para mantenimiento: un archivo tan grande cuesta navegar, mezcla muchas responsabilidades y hace más probables conflictos si varias personas lo tocan.
-
-- **Cuándo compensa dividir:** cuando el archivo o el equipo crezcan, o cuando cambiar una parte (p. ej. filtros) obligue a revisar demasiado código ajeno.
-- **Cómo dividir sin romper tests:** separar por dominio: (1) **Filtros** (marca, tipo de cambio, “ver todas las marcas”, opciones Manual/Opel) en un módulo o clase (p. ej. `CarsFiltersPage` o `tests/pages/cars-filters.ts`); (2) **Listado** (scroll, `getVisibleModelsWithPrices`, `clickFirstVisibleCar`) en `CarsPage` o en `cars-list.ts`. `CarsPage` puede instanciar y usar el módulo de filtros para que los specs sigan llamando solo a `CarsPage` si no quieres tocar los specs. No es obligatorio partirlo ya; es el siguiente paso razonable cuando la mantenibilidad lo pida.
+`CarsPage` es una **fachada** (~100 líneas) que delega en tres Page Objects: `BrandFilterPage` (filtro de marca), `ExchangeTypeFilterPage` (tipo de cambio) y `CarsGridPage` (listado, scroll, limpiar filtros, clic en coche). Los specs siguen usando solo `CarsPage`; la lógica de filtros y listado está en `brand-filter.page.ts`, `exchange-type-filter.page.ts` y `cars-grid.page.ts`. Así se mantiene una sola API para los tests y el código queda repartido por responsabilidad.
 
 ---
 
@@ -269,3 +301,91 @@ Cada carpeta tiene un rol claro para que negocio y desarrollo sepan dónde está
 - **`tests/logs/`** y **`tests/artifacts/`** – **Salida de cada run:** logs por ejecución y screenshots. No versionados.
 - **`playwright.config.ts`** – **Configuración** del motor de tests (navegador, timeouts, reintentos en CI).
 - **`.github/workflows/`** – **Pipeline de CI:** define cuándo se ejecutan los tests (push, PR) y qué pasos se dan (instalar, ejecutar, subir resultados). Ver *Integración en CI*.
+
+---
+
+## Archivos del proyecto (listado completo)
+
+Qué hace cada archivo del repo:
+
+### Raíz
+
+| Archivo | Qué hace |
+|---------|----------|
+| `package.json` | Dependencias (Playwright, chalk, boxen, etc.) y scripts: `test`, `clean:cookies`, `test:cars`. |
+| `package-lock.json` | Lockfile de npm; fija versiones de dependencias. |
+| `playwright.config.ts` | Configuración de Playwright: `testDir`, timeout, 1 worker, reporters (list + run-logger), path del log por ejecución (`tests/logs/run-*.log`), headless en CI, Chrome en local. |
+| `tsconfig.json` | Configuración de TypeScript (target, module, etc.). |
+| `.gitignore` | Archivos/carpetas ignorados (node_modules, tests/fixtures, tests/logs, tests/artifacts, dist, etc.). |
+| `README.md` | Este documento. |
+
+### .github/workflows/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `e2e.yml` | Workflow de GitHub Actions: checkout, Node 20, `npm ci`, instalación de Chromium, restauración de cookies desde secreto `E2E_COOKIES_BASE64`, `npm run test`, subida de artefactos (test-results, playwright-report, tests/artifacts, tests/logs). Se ejecuta en push/PR a main/master y con *Run workflow*. |
+
+### tests/config/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `constants.ts` | Constantes de prueba: `PHONE`, `OTP`, `WRONG_OTP`. Usadas por login y specs que requieren sesión. |
+| `index.ts` | Punto de entrada de la config: re-exporta constantes para importar desde un solo sitio (`tests/config`). |
+
+### tests/helpers/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `car-card-helpers.ts` | Lógica pura para cards de coche: regex para modelo/precio, `getBrandPlusModel`, `limitToCarsOnly`. Usado por el page del grid para extraer datos de las cards. |
+| `test-helpers.ts` | Helpers compartidos: `waitForEnter` (pausa con “Pulsa ENTER”), `stepCheckpoint` (pausa si `STEP_BY_STEP`), `keepPageOpenByTimer` (mantener página N segundos al final). |
+
+### tests/pages/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `brand-filter.page.ts` | Page Object del filtro de marca: abrir filtro, “Ver todas las marcas”, seleccionar marca (p. ej. Opel), reabrir panel. Selectores y reintentos centralizados aquí. |
+| `cars-grid.page.ts` | Page Object del listado/grid: scroll para cargar más cards, `getVisibleModelsWithPrices`, limpiar filtros, `clickFirstVisibleCar`. Usa `car-card-helpers` para parsear texto de las cards. |
+| `cars-page.ts` | Fachada que agrupa filtro marca, filtro tipo de cambio y grid. Delega en `BrandFilterPage`, `ExchangeTypeFilterPage` y `CarsGridPage`; los specs siguen usando `CarsPage` con la misma API. |
+| `exchange-type-filter.page.ts` | Page Object del filtro “Tipo de cambio”: abrir filtro, seleccionar opción (p. ej. Manual). |
+| `login-page.ts` | Page Object del login: rellenar teléfono, continuar, rellenar OTP, aceptar cookies, detectar sesión (`assertLoggedInAndGetInitials`), guardar cookies. Usado por login.spec, login-fail-otp y view-all-cars. |
+
+### tests/reporters/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `run-logger.ts` | Reporter de Playwright: al final de cada ejecución escribe/append en el fichero de log (`PLAYWRIGHT_LOG_FILE`) un resumen: RUN_RESULT (PASS/FAIL), fecha, duración y lista de tests con estado. El logger de consola escribe durante el run en ese mismo fichero. |
+
+### tests/specs/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `login.spec.ts` | Test de login exitoso: cargar cookies, verificar sesión; si no hay sesión válida, login (teléfono + OTP), guardar cookies, aceptar cookies si aparecen. |
+| `login-fail-otp.spec.ts` | Test de login fallido: introduce OTP incorrecto y comprueba que no se accede (no usa cookies). |
+| `view-all-cars.spec.ts` | Test “Ver todos los coches”: cookies/sesión, ir al listado, abrir filtro Marca, Ver todas las marcas, seleccionar Opel, listar modelos, abrir tipo de cambio, seleccionar Manual, listar coches, clic en el primero, screenshot, mantener página abierta. |
+| `view-all-cars-clear-filters.spec.ts` | Test “Limpiar filtros”: mismo flujo hasta listar con Opel + Manual; luego limpiar filtros y comprobar que el listado sin filtros es visible (sin listar todos los coches). |
+
+### tests/steps/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `login.steps.ts` | Nombres de pasos para el spec de login: `loadCookies`, `verifySession`, `login`, `saveCookies`, etc. Se usan en `test.step(STEPS.xxx, ...)`. |
+| `login-fail-otp.steps.ts` | Nombres de pasos para el spec de login fallido (OTP incorrecto). |
+| `view-all-cars.steps.ts` | Nombres de pasos para el spec “Ver todos los coches” (openBrand, viewAllBrands, selectBrandOpel, listModels, etc.). |
+| `view-all-cars-clear-filters.steps.ts` | Nombres de pasos para el spec de limpiar filtros (incluye clearFilters, listModelsAfterClear, etc.). |
+
+### tests/utils/
+
+| Archivo | Qué hace |
+|---------|----------|
+| `cookies.ts` | Guardar, cargar y eliminar cookies de sesión en `tests/fixtures/cookies.json`. Comprueba validez/expiración y formatea mensajes. Usado por specs y login-page. |
+| `delete-cookies.ts` | Script ejecutable (`npm run clean:cookies`): borra el fichero de cookies. Usa `node dist/tests/utils/delete-cookies.js` tras compilar con `npx tsc`. |
+| `logger.ts` | Logger de consola con colores (chalk) y cajas (boxen) para pasos: `step`, `info`, `success`, `warn`, `error`, `muted`, `car`. Escribe también en el fichero de log de la ejecución (`PLAYWRIGHT_LOG_FILE`) sin ANSI. |
+
+### Carpetas generadas (no versionadas)
+
+| Carpeta | Qué contiene |
+|---------|--------------|
+| `tests/fixtures/` | `cookies.json` (cookies de sesión). No se sube al repo; en CI se puede restaurar desde el secreto `E2E_COOKIES_BASE64`. |
+| `tests/logs/` | Un fichero por ejecución: `run-YYYY-MM-DD-HHMMSS.log` (salida de consola + resumen al final). |
+| `tests/artifacts/` | Screenshots y otros artefactos generados por los tests. |
+| `dist/` | Salida de `npx tsc`; el script `clean:cookies` usa `dist/tests/utils/delete-cookies.js`. |

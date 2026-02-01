@@ -1,6 +1,30 @@
+import * as path from 'path';
+import * as fs from 'fs';
 import { defineConfig } from '@playwright/test';
 
 const isCI = process.env.CI === 'true';
+
+// Un fichero de log por ejecución; el logger y el reporter lo usan.
+const LOGS_DIR = path.join(process.cwd(), 'tests', 'logs');
+const ts = new Date();
+const stamp =
+  ts.getFullYear() +
+  '-' +
+  String(ts.getMonth() + 1).padStart(2, '0') +
+  '-' +
+  String(ts.getDate()).padStart(2, '0') +
+  '-' +
+  String(ts.getHours()).padStart(2, '0') +
+  String(ts.getMinutes()).padStart(2, '0') +
+  String(ts.getSeconds()).padStart(2, '0');
+const logPath = path.join(LOGS_DIR, `run-${stamp}.log`);
+process.env.PLAYWRIGHT_LOG_FILE = logPath;
+try {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+  fs.writeFileSync(logPath, '', 'utf-8');
+} catch {
+  // ignorar
+}
 
 export default defineConfig({
   testDir: './tests/specs',

@@ -50,12 +50,9 @@ jobs:
             echo "No hay secreto E2E_COOKIES_BASE64; los tests harán login desde cero (puede fallar si hay captcha)."
           fi
 
+      # Opcional: añadir env con credenciales desde secretos (E2E_PHONE, E2E_OTP) si no usas constantes en código.
       - name: Run E2E tests
         run: npm run test
-        env:
-          # Opcional: credenciales desde secretos (si no usas constantes en código)
-          # E2E_PHONE: ${{ secrets.E2E_PHONE }}
-          # E2E_OTP: ${{ secrets.E2E_OTP }}
 
       - name: Upload test results
         if: always()
