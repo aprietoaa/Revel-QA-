@@ -3,13 +3,17 @@ import { logger } from '../utils/logger';
 
 /** Selectores reutilizables del flujo de login (POM) */
 const SELECTORS = {
-  phoneInput: 'xpath=/html/body/div[3]/div/div/div/div[2]/div[1]/form/div[1]/div[1]/div/div[2]/input',
+  /** Input de teléfono: por atributos estables (autocomplete, inputmode) en lugar de XPath frágil */
+  phoneInput: 'input[autocomplete="tel"][inputmode="tel"], input[name="phone number"]',
   /**
-   * Elemento que indica que el paso OTP está listo (párrafo visible tras el captcha).
-   * XPath: /html/body/div[3]/div/div/div/div/div/div[2]/div/div[1]/div[3]/p[1]
-   * Cuando está visible, ya se puede escribir el código OTP.
+   * Input único OTP: dentro del wrapper del modal (selector que apunta al input del código).
+   * Usamos class*="otp_wrapper" para no depender del hash (D7qu7 puede cambiar en build).
    */
-  otpStepIndicator: 'xpath=/html/body/div[3]/div/div/div/div/div/div[2]/div/div[1]/div[3]/p[1]',
+  otpSingleInput:
+    'div[class*="otp_wrapper"] form input, input[autocomplete="one-time-code"][inputmode="numeric"], input[autocomplete="one-time-code"]',
+  /** Inputs de OTP por dígito (maxlength=1) por si la página usa varias cajas */
+  otpDigitInputs:
+    'input[maxlength="1"][type="text"], input[maxlength="1"][type="tel"], input[inputmode="numeric"][maxlength="1"]',
   /** CTA "Ver todos los coches" */
   viewAllCarsCta: 'xpath=/html/body/div[3]/div[2]/div/div[3]/div/div[1]/a/p',
   viewAllCarsLink: 'xpath=/html/body/div[3]/div[2]/div/div[3]/div/div[1]/a',
@@ -53,7 +57,7 @@ export class LoginPage {
   }
 
   /**
-   * Ejecuta el flujo completo de login: teléfono → captcha → OTP → cookies.
+   * Ejecuta el flujo completo de login: teléfono → (captcha a mano) → OTP → cookies.
    */
   async performFullLogin(phone: string, otp: string): Promise<void> {
     await this.goto();
@@ -64,8 +68,11 @@ export class LoginPage {
     await this.tryAcceptCookieConsent();
   }
 
-  async fillPhone(phone: string) {
-    await this.page.locator(SELECTORS.phoneInput).fill(phone);
+  async fillPhone(phone: string, timeout = 15_000) {
+    const input = this.page.locator(SELECTORS.phoneInput).first();
+    await input.waitFor({ state: 'visible', timeout });
+    await input.click();
+    await input.fill(phone);
   }
 
   async clickContinueWhenEnabled(timeout = 60_000) {
@@ -76,38 +83,55 @@ export class LoginPage {
   }
 
   /**
-   * Espera a que el paso OTP esté listo (p[1] visible tras el captcha).
-   * No hay espera fija: solo se espera hasta que el elemento sea visible.
+   * Espera a que el paso del código esté listo: el textbox del dialog visible
+   * (el mismo que rellenamos en fillOtp). No depende del texto ("Introduce el código", "OTP", etc.).
    */
   async waitForOtpStepReady(timeout = 5 * 60 * 1000) {
-    await expect(this.page.locator(SELECTORS.otpStepIndicator)).toBeVisible({ timeout });
+    const codeInput = this.page.getByRole('dialog').getByRole('textbox');
+    await expect(codeInput).toBeVisible({ timeout });
   }
 
   /**
-   * Escribe el código OTP. Sin espera fija: solo espera a que los inputs sean visibles (timeout corto).
+   * Escribe el código OTP. Usa el textbox del dialog (lo que generó codegen).
+   * Fallback a selectores por atributos / otp_wrapper.
    */
-  async fillOtp(code: string, timeout = 5_000) {
-    const digitInputs = this.page.locator('input[maxlength="1"][type="text"], input[maxlength="1"][type="tel"]');
-    const singleInput = this.page.locator('input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i]');
+  async fillOtp(code: string, timeout = 15_000) {
+    const dialogInput = this.page.getByRole('dialog').getByRole('textbox');
+    const singleInput = this.page.locator(SELECTORS.otpSingleInput).first();
+    const digitInputs = this.page.locator(SELECTORS.otpDigitInputs);
 
     try {
-      await expect(digitInputs.first()).toBeVisible({ timeout });
-      const count = await digitInputs.count();
-      const len = Math.min(count, code.length);
-      await Promise.all(
-        Array.from({ length: len }, (_, i) => digitInputs.nth(i).fill(code[i]))
-      );
-      if (count < code.length) {
-        await digitInputs.last().type(code.slice(count), { delay: 0 });
-      }
+      await dialogInput.waitFor({ state: 'visible', timeout });
+      await dialogInput.click();
+      await dialogInput.fill(code);
+      logger.success('OTP rellenado (dialog textbox)');
       return;
-    } catch (err) {
-      // Fall back to single input field
+    } catch {
+      // Fallback: selectores por atributos / otp_wrapper
     }
 
-    const targetInput = singleInput.first();
-    await expect(targetInput).toBeVisible({ timeout });
-    await targetInput.fill(code);
+    try {
+      await singleInput.waitFor({ state: 'visible', timeout });
+      await singleInput.click();
+      await singleInput.fill(code);
+      return;
+    } catch {
+      // Fallback: varios inputs de un dígito
+    }
+
+    await digitInputs.first().waitFor({ state: 'visible', timeout });
+    const count = await digitInputs.count();
+    const len = Math.min(count, code.length);
+    for (let i = 0; i < len; i++) {
+      const input = digitInputs.nth(i);
+      await input.click();
+      await input.fill(code[i]);
+    }
+    if (count < code.length) {
+      const last = digitInputs.last();
+      await last.click();
+      await last.type(code.slice(count), { delay: 0 });
+    }
   }
 
   async tryAcceptCookieConsent(timeout = 5_000): Promise<boolean> {

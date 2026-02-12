@@ -37,8 +37,11 @@ test('Login fallido: OTP incorrecto (sin tocar cookies)', async ({ page }) => {
 
   await test.step(STEPS.verifyLoginFailed, async () => {
     logger.step(6, totalSteps, STEPS.verifyLoginFailed);
-    // Comprobación genérica: seguir en URL de login
-    await expect(page).toHaveURL(/.*login/);
+    const currentUrl = page.url();
+    await expect(
+      page,
+      `Se esperaba permanecer en una URL de login tras OTP incorrecto. URL actual: ${currentUrl}`,
+    ).toHaveURL(/.*login/);
     logger.success('Se detectó que el login falló (OTP incorrecto).');
   });
 });

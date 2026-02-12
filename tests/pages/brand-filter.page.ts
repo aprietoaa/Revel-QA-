@@ -41,8 +41,8 @@ export class BrandFilterPage {
         ? [{ name: `testid=${options.testId}`, locator: this.page.getByTestId(options.testId) }]
         : []),
       {
-        name: 'div.FilterShortcutButton_filter__button__ZCF57 > p (Marca)',
-        locator: this.page.locator('div.FilterShortcutButton_filter__button__ZCF57').filter({ has: this.page.locator('p', { hasText: /marca/i }) }).locator('p'),
+        name: 'div[class*="FilterShortcutButton"] con "Marca"',
+        locator: this.page.locator('div[class*="FilterShortcutButton"]').filter({ has: this.page.locator('p', { hasText: /marca/i }) }).locator('p'),
       },
       { name: 'p[class*="Text_label"]:has-text("Marca")', locator: this.page.locator('p[class*="Text_label"]').filter({ hasText: /marca/i }) },
       { name: 'role=button[name~="Marca"]', locator: this.page.getByRole('button', { name: /marca/i }) },

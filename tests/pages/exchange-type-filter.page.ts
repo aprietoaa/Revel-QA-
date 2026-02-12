@@ -26,14 +26,24 @@ export class ExchangeTypeFilterPage {
     const candidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
       ...(options?.testId ? [{ name: `testid=${options.testId}`, locator: this.page.getByTestId(options.testId) }] : []),
       {
-        name: 'div.FilterShortcutButton con "tipo de cambio"',
+        name: 'div[class*="FilterShortcutButton"] con "Cambio"',
         locator: this.page
-          .locator('div.FilterShortcutButton_filter__button__ZCF57')
+          .locator('div[class*="FilterShortcutButton"]')
+          .filter({ has: this.page.locator('p', { hasText: /^cambio$/i }) })
+          .locator('p'),
+      },
+      { name: 'p[class*="Text_label"] Cambio', locator: this.page.locator('p[class*="Text_label"]').filter({ hasText: /^cambio$/i }) },
+      {
+        name: 'div[class*="FilterShortcutButton"] con "tipo de cambio"',
+        locator: this.page
+          .locator('div[class*="FilterShortcutButton"]')
           .filter({ has: this.page.locator('p', { hasText: /tipo de cambio/i }) })
           .locator('p'),
       },
       { name: 'p[class*="Text_label"] tipo de cambio', locator: this.page.locator('p[class*="Text_label"]').filter({ hasText: /tipo de cambio/i }) },
+      { name: 'text="Cambio"', locator: this.page.getByText(/^cambio$/i).first() },
       { name: 'text="Tipo de cambio"', locator: this.page.getByText(/tipo de cambio/i).first() },
+      { name: 'role=button Cambio', locator: this.page.getByRole('button', { name: /^cambio$/i }) },
       { name: 'role=button tipo de cambio', locator: this.page.getByRole('button', { name: /tipo de cambio/i }) },
     ];
 

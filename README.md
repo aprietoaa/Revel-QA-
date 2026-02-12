@@ -28,6 +28,22 @@ Tests end-to-end para **driverevel.com**: login, listado de coches, filtros y se
 
 ---
 
+## Cambios recientes (mantenimiento de selectores y flujo de login)
+
+Ajustes realizados para que los tests sigan funcionando cuando la web cambia textos, estructura del DOM o hashes de clases CSS:
+
+- **Login (teléfono y OTP):**
+  - Input de teléfono: selector por atributos (`input[autocomplete="tel"]`, `input[name="phone number"]`) en lugar de XPath; espera a que sea visible, click y luego fill para que formularios React respondan bien.
+  - Paso OTP: se espera al **textbox del dialog** (`getByRole('dialog').getByRole('textbox')`) en lugar de un XPath o texto concreto; el campo se rellena con ese mismo locator. Así no depende de que el copy diga "OTP", "Introduce el código" o "Escríbelo aquí para entrar".
+  - El **captcha se resuelve a mano**; el test solo espera a que aparezca el campo del código y lo rellena.
+- **Test login fallido (OTP incorrecto):** mensaje de error mejorado: si falla la comprobación de URL, se muestra la URL actual para depurar.
+- **Filtros (Marca y Cambio):**
+  - Selectores que usaban clases con hash (p. ej. `FilterShortcutButton_filter__button__ZCF57`, `ShortcutsFilterBar_filters__shorcuts__V25SQ`) sustituidos por `class*="FilterShortcutButton"` y `class*="ShortcutsFilterBar"` para que sigan funcionando aunque cambie el hash en un nuevo build.
+  - Filtro de tipo de cambio: eliminado el XPath por defecto en los specs; el page object usa candidatos por rol/texto. Añadidos candidatos para el label **"Cambio"** (además de "Tipo de cambio") porque la web pasó a mostrar "Cambio".
+- **Variables de entorno:** si defines `EXCHANGE_TYPE_LOCATOR` o `BRAND_LOCATOR` etc., se siguen usando; si no, se usan los selectores resilientes anteriores.
+
+---
+
 ## Prerrequisitos
 
 - **Node.js** (v18 o superior recomendado)
@@ -204,7 +220,7 @@ Se eligió qué automatizar en este orden: primero lo que más afecta si falla, 
 - **Entorno bajo prueba:** driverevel.com (producción o el que apunte la URL usada en los tests).
 - **Login:** Se usa un número de teléfono y OTP fijos definidos en `tests/config/constants.ts` (PHONE, OTP). El OTP es válido para ese flujo de prueba.
 - **Captcha:** Si la web muestra captcha en login, debe resolverse manualmente durante la ejecución; las cookies se guardan después para no repetir en siguientes runs.
-- **Cookies:** La sesión se persiste en `tests/fixtures/cookies.json` (no versionado). Sin este archivo o tras `clean:cookies`, los tests que necesitan sesión harán login desde cero.
+- **Cookies:** La sesión se persiste en `tests/fixtures/cookies.json` (no versionado). Sin este archivo o tras `clean:cookies`, los tests que necesitan sesión harán login desde cero.npm run clena
 - **Navegador:** Chrome instalado en el sistema; Playwright usa `channel: 'chrome'`.
 - **Estructura de la web:** Los tests dependen de selectores y flujos actuales (marca, tipo de cambio, listado de coches). Cambios de diseño o de DOM pueden requerir actualizar page objects o constantes.
 

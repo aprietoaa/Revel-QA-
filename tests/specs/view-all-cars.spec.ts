@@ -49,8 +49,16 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
     }
 
     await loginPage.tryAcceptCookieConsent();
-    // Verificación explícita de sesión: iniciales visibles en el header.
-    await loginPage.assertLoggedInAndGetInitials();
+    try {
+      await loginPage.assertLoggedInAndGetInitials();
+    } catch {
+      logger.warn('Sesión no válida tras cargar cookies (p. ej. caducadas). Se hará login.');
+      await loginPage.performFullLogin(PHONE, OTP);
+      await loginPage.gotoDashboard();
+      await saveCookies(page);
+      await loginPage.tryAcceptCookieConsent();
+      await loginPage.assertLoggedInAndGetInitials();
+    }
   });
 
   await test.step(STEPS.viewAllCars, async () => {
@@ -91,8 +99,9 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
       await marca.waitFor({ state: 'visible', timeout: 10_000 });
       await marca.click({ ...clickOpt, timeout: 10_000 });
     } else {
-      const marcaByIndex = page.locator('div.ShortcutsFilterBar_filters__shorcuts__V25SQ > div:nth-child(7) div.FilterShortcutButton_filter__button__ZCF57 > p').first();
-      const marcaByText = page.locator('div.FilterShortcutButton_filter__button__ZCF57').filter({ has: page.locator('p', { hasText: /marca/i }) }).locator('p').first();
+      const filterBar = page.locator('div[class*="ShortcutsFilterBar"]');
+      const marcaByIndex = filterBar.locator('div:nth-child(7) div[class*="FilterShortcutButton"] > p').first();
+      const marcaByText = page.locator('div[class*="FilterShortcutButton"]').filter({ has: page.locator('p', { hasText: /marca/i }) }).locator('p').first();
       try {
         await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
         await marcaByIndex.click(clickOpt);
@@ -127,10 +136,8 @@ test('Ver todos los coches (con sesión/cookies si existen)', async ({ page }) =
   await test.step(STEPS.exchangeType, async () => {
     logger.step(10, totalSteps, STEPS.exchangeType);
     await carsPage.clickExchangeTypeFilter({
-      locatorOverride:
-        process.env.EXCHANGE_TYPE_LOCATOR ??
-        '/html/body/div[8]/div/div/div[1]/div/div/div[2]/div[5]/div[1]/p',
-      testId: process.env.EXCHANGE_TYPE_TESTID,
+      ...(process.env.EXCHANGE_TYPE_LOCATOR && { locatorOverride: process.env.EXCHANGE_TYPE_LOCATOR }),
+      ...(process.env.EXCHANGE_TYPE_TESTID && { testId: process.env.EXCHANGE_TYPE_TESTID }),
     });
     logger.success('Paso 10 OK: tipo de cambio pulsado.');
   });
