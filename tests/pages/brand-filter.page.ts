@@ -5,6 +5,24 @@ import { logger } from '../utils/logger';
 export class BrandFilterPage {
   constructor(private readonly page: Page) {}
 
+  private async waitForBrandPanelOpened(timeout: number): Promise<void> {
+    const verTodas = this.page.getByText(/ver todas las marcas/i).first();
+    const verMenos = this.page.getByText(/ver menos/i).first();
+    const seleccionarTodas = this.page.getByText(/seleccionar todas las marcas/i).first();
+    const panel = this.getBrandDropdownPanel().first();
+    await Promise.race([
+      panel.waitFor({ state: 'visible', timeout }).catch(() => Promise.reject(new Error('panel not visible'))),
+      verTodas.waitFor({ state: 'visible', timeout }).catch(() => Promise.reject(new Error('verTodas not visible'))),
+      verMenos.waitFor({ state: 'visible', timeout }).catch(() => Promise.reject(new Error('verMenos not visible'))),
+      seleccionarTodas.waitFor({ state: 'visible', timeout }).catch(() => Promise.reject(new Error('seleccionarTodas not visible'))),
+    ]).catch(() => {});
+  }
+
+  private async waitForBrandsExpanded(timeout: number): Promise<void> {
+    const verMenos = this.page.getByText(/ver menos/i).first();
+    await verMenos.waitFor({ state: 'visible', timeout }).catch(() => {});
+  }
+
   async openBrandFilter(options?: {
     timeout?: number;
     locatorOverride?: string;
@@ -126,18 +144,77 @@ export class BrandFilterPage {
     throw new Error(`No se pudo abrir el filtro "Marca". Último error: ${String(lastError)}`);
   }
 
+  /**
+   * Reabre el desplegable de marcas (p. ej. después de "Ver todas las marcas").
+   * Encapsula la lógica de clic en el botón/filtro "Marca" para no duplicar selectores en los specs.
+   */
+  async reopenBrandFilter(options?: { timeout?: number; locatorOverride?: string }): Promise<void> {
+    const timeout = options?.timeout ?? 10_000;
+    const clickOpt = { timeout: 5_000, noWaitAfter: true } as const;
+
+    if (options?.locatorOverride) {
+      const marca = this.page.locator(options.locatorOverride).first();
+      await marca.waitFor({ state: 'visible', timeout });
+      await marca.click({ ...clickOpt, timeout });
+      await this.waitForBrandPanelOpened(4_000);
+      return;
+    }
+
+    const filterBar = this.page.locator('div[class*="ShortcutsFilterBar"]');
+    const marcaByIndex = filterBar.locator('div:nth-child(7) div[class*="FilterShortcutButton"] > p').first();
+    const marcaByText = this.page
+      .locator('div[class*="FilterShortcutButton"]')
+      .filter({ has: this.page.locator('p', { hasText: /marca/i }) })
+      .locator('p')
+      .first();
+    try {
+      await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
+      await marcaByIndex.click(clickOpt);
+    } catch {
+      await marcaByText.waitFor({ state: 'visible', timeout: 5_000 });
+      await marcaByText.click(clickOpt);
+    }
+    await this.waitForBrandPanelOpened(4_000);
+  }
+
   async clickViewAllBrands(options?: { timeout?: number; locatorOverride?: string; testId?: string }) {
     const timeout = options?.timeout ?? 15_000;
     const debug = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.DEBUG_SELECTORS ?? '').toLowerCase());
-    const fastTimeout = 10_000;
+    const fastTimeout = 6_000;
 
     if (options?.locatorOverride) {
+      logger.muted("Buscando 'Ver todas las marcas' (locatorOverride)...");
       const target = this.page.locator(options.locatorOverride).first();
       if (debug) logger.info(`Ver todas las marcas con locatorOverride: ${options.locatorOverride}`);
       await expect(target).toBeVisible({ timeout });
       await target.scrollIntoViewIfNeeded();
       await target.click({ timeout, noWaitAfter: true });
+      await this.waitForBrandsExpanded(4_000);
       return;
+    }
+
+    logger.muted("Buscando 'Ver todas las marcas'...");
+    let lastError: unknown = null;
+
+    // Estrategia 1: dentro del panel del modal (timeouts cortos para no bloquear; si falla se prueban las demás)
+    try {
+      logger.muted("  Probando: dentro del panel Marca (scroll al final)...");
+      const panel = this.getBrandDropdownPanel().first();
+      await panel.waitFor({ state: 'visible', timeout: 2_500 });
+      await panel.evaluate((el: HTMLElement) => {
+        el.scrollTop = el.scrollHeight;
+      }).catch(() => {});
+      await this.page.waitForTimeout(150).catch(() => {});
+      const linkInPanel = panel.getByText(/ver todas las marcas/i).first();
+      await linkInPanel.waitFor({ state: 'attached', timeout: 2_000 });
+      await linkInPanel.scrollIntoViewIfNeeded().catch(() => {});
+      await this.page.waitForTimeout(80).catch(() => {});
+      await linkInPanel.click({ timeout: 3_000, force: true, noWaitAfter: true });
+      await this.waitForBrandsExpanded(4_000);
+      return;
+    } catch (e) {
+      lastError = e;
+      if (debug) logger.muted("  No se pudo con panel (scroll + link).");
     }
 
     const candidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
@@ -149,9 +226,9 @@ export class BrandFilterPage {
     ];
 
     const clickOpt = { timeout: fastTimeout, noWaitAfter: true } as const;
-    let lastError: unknown = null;
     for (const c of candidates) {
       try {
+        logger.muted(`  Probando: ${c.name}...`);
         const target = c.locator.first();
         await expect(target).toBeVisible({ timeout: fastTimeout });
         await target.scrollIntoViewIfNeeded();
@@ -185,6 +262,7 @@ export class BrandFilterPage {
             }, handle);
           }
         }
+        await this.waitForBrandsExpanded(4_000);
         return;
       } catch (error) {
         lastError = error;
@@ -196,14 +274,67 @@ export class BrandFilterPage {
     throw new Error(`No se pudo clicar "Ver todas las marcas". Último error: ${String(lastError)}`);
   }
 
+  /** Panel del desplegable de marcas. Prioriza contenedores que tienen opciones (listbox/option) para no incluir el grid de coches. */
   getBrandDropdownPanel(): ReturnType<Page['locator']> {
     const byTestId = process.env.BRAND_DROPDOWN_TESTID;
     if (byTestId) return this.page.getByTestId(byTestId);
-    const panelWithVerMenos = this.page.locator('body > div').filter({ hasText: /Ver menos/i }).first();
-    const overlay = this.page.locator('body > div').nth(7).filter({ hasText: /seleccionar todas las marcas|Ver menos/i });
-    const rolePanel = this.page.getByRole('listbox').or(this.page.getByRole('dialog')).or(this.page.getByRole('menu')).filter({ hasText: /seleccionar todas las marcas/i }).first();
-    const byContent = this.page.locator('div').filter({ has: this.page.getByText(/seleccionar todas las marcas/i) }).first();
-    return panelWithVerMenos.or(overlay).or(rolePanel).or(byContent);
+    const textPanel = /Ver menos|Ver todas las marcas|seleccionar todas las marcas/i;
+    const rolePanel = this.page.getByRole('listbox').or(this.page.getByRole('dialog')).or(this.page.getByRole('menu')).filter({ hasText: textPanel }).first();
+    const overlayConOpciones = this.page.locator('body > div').filter({
+      has: this.page.getByRole('option').or(this.page.getByRole('menuitem')).or(this.page.getByText(textPanel)),
+    }).filter({ hasText: textPanel }).first();
+    const byContent = this.page.locator('div').filter({ has: this.page.getByText(textPanel) }).first();
+    const fallback = this.page.locator('body > div').filter({ hasText: textPanel }).first();
+    return rolePanel.or(overlayConOpciones).or(byContent).or(fallback);
+  }
+
+  /**
+   * Obtiene la lista de marcas de coche disponibles en el panel (precondición: panel abierto y "Ver todas las marcas" pulsado).
+   * Excluye todo lo que no es marca: etiquetas de filtros, colores, combustibles, tipos de carrocería, CTAs, etc.
+   */
+  async getAvailableBrands(options?: {
+    timeout?: number;
+    excludeTexts?: RegExp[] | string[];
+  }): Promise<string[]> {
+    const timeout = options?.timeout ?? 10_000;
+    const defaultExclude: RegExp[] = [
+      /seleccionar todas las marcas|ver todas las marcas|ver menos/i,
+      /^\s*$/,
+      /\d+\s*meses|\d+\s*l\b|contrata|online|minutos|pocos|€|euros?|precio|alquiler/i,
+      /^marca$|^cambio$|^color$|^combustible$|^maletero$|^ordenar por$|^permanencia$|^promociones$|^tipo de coche$|^cuota$/i,
+      /^manual$|^automático$/i,
+      /^blanco$|^negro$|^rojo$|^verde$|^gris|^plata$/i,
+      /^diesel$|^gasolina$|^eléctrico$|^híbrido/i,
+      /^compacto$|^coupe$|^familiar$|^suv$/i,
+      /^pick-up$|^pick up$|^berlina$|^monovolumen$/i,
+      /^grande\s|^mediano\s|^pequeño|^muy grande/i,
+      /crear una alerta|entrega\s*rápida|entrega:\s*más rápida/i,
+    ];
+    const excludePatterns = options?.excludeTexts ?? defaultExclude;
+    const panel = this.getBrandDropdownPanel();
+    await panel.first().waitFor({ state: 'visible', timeout }).catch(() => {});
+
+    const optionSelectors = [
+      panel.locator('p[class*="Text_regular__"]'),
+      panel.getByRole('option'),
+      panel.getByRole('menuitem'),
+    ];
+    const seen = new Set<string>();
+    for (const loc of optionSelectors) {
+      const count = await loc.count().catch(() => 0);
+      if (count === 0) continue;
+      const texts = await loc.allTextContents();
+      for (const raw of texts) {
+        const t = raw.trim();
+        if (t.length < 2 || t.length > 25) continue;
+        const excluded = excludePatterns.some((p) =>
+          typeof p === 'string' ? t.toLowerCase().includes(p.toLowerCase()) : p.test(t)
+        );
+        if (!excluded) seen.add(t);
+      }
+      if (seen.size > 0) break;
+    }
+    return Array.from(seen).sort();
   }
 
   async selectBrand(brandName: string, options?: { timeout?: number; locatorOverride?: string; testId?: string }) {
@@ -222,18 +353,24 @@ export class BrandFilterPage {
     }
 
     const panel = this.getBrandDropdownPanel();
+    await panel.first().waitFor({ state: 'visible', timeout: Math.min(timeout, 6_000) }).catch(() => {});
+    // Hacer scroll en el panel para que opciones más abajo (p. ej. Renault) sean visibles y clickables
+    await panel.first().evaluate((el: HTMLElement) => { el.scrollTop = 0; }).catch(() => {});
+    await this.page.waitForTimeout(100).catch(() => {});
     const clickOpt = { timeout: fastTimeout, noWaitAfter: true } as const;
 
+    const escaped = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exactRe = new RegExp(`^${escaped}$`, 'i');
     const scopedCandidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
       ...(options?.testId ? [{ name: `testid=${options.testId} (en panel)`, locator: panel.getByTestId(options.testId) }] : []),
-      { name: `celda con "${brandName}"`, locator: panel.getByText(brandName, { exact: true }).locator('xpath=..').first() },
       { name: `text exacto "${brandName}" (en panel)`, locator: panel.getByText(brandName, { exact: true }).first() },
+      { name: 'p exacto por regex', locator: panel.locator('p[class*="Text_regular__"]').filter({ hasText: exactRe }).first() },
+      { name: `celda con "${brandName}"`, locator: panel.getByText(brandName, { exact: true }).locator('xpath=..').first() },
       { name: `role=menuitem`, locator: panel.getByRole('menuitem', { name: re }) },
       { name: `role=option`, locator: panel.getByRole('option', { name: re }) },
       { name: `role=button`, locator: panel.getByRole('button', { name: re }) },
       { name: `text="${brandName}" (en panel)`, locator: panel.getByText(re).first() },
-      { name: 'p[class*="Text_regular__"] exacto', locator: panel.locator('p[class*="Text_regular__"]').filter({ hasText: new RegExp(`^${brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }) },
-      { name: 'p[class*="Text_regular__"]', locator: panel.locator('p[class*="Text_regular__"]').filter({ hasText: re }) },
+      { name: 'p[class*="Text_regular__"]', locator: panel.locator('p[class*="Text_regular__"]').filter({ hasText: re }).first() },
     ];
 
     let lastError: unknown = null;
@@ -246,6 +383,7 @@ export class BrandFilterPage {
         }
         await expect(target).toBeVisible({ timeout: fastTimeout });
         await target.scrollIntoViewIfNeeded();
+        await target.evaluate((el: HTMLElement) => el.scrollIntoView({ block: 'nearest', inline: 'nearest' })).catch(() => {});
         await target.click(clickOpt);
         return;
       } catch (error) {
@@ -254,25 +392,10 @@ export class BrandFilterPage {
       }
     }
 
-    const pageCandidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
-      { name: `role=menuitem`, locator: this.page.getByRole('menuitem', { name: re }) },
-      { name: `role=link`, locator: this.page.getByRole('link', { name: re }) },
-      { name: `text="${brandName}"`, locator: this.page.getByText(re).first() },
-      { name: 'p[class*="Text_regular__"]', locator: this.page.locator('p[class*="Text_regular__"]').filter({ hasText: re }) },
-    ];
-    for (const c of pageCandidates) {
-      try {
-        const target = c.locator.first();
-        await expect(target).toBeVisible({ timeout: fastTimeout });
-        await target.scrollIntoViewIfNeeded();
-        await target.click(clickOpt);
-        return;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw new Error(`No se pudo seleccionar la marca "${brandName}". Último error: ${String(lastError)}`);
+    throw new Error(
+      `No se pudo seleccionar la marca "${brandName}" dentro del panel de marcas. ` +
+        `(No se usa fallback a nivel página para no abrir una ficha de coche por error.) Último error: ${String(lastError)}`
+    );
   }
 
   async selectAllBrands(options?: { timeout?: number; locatorOverride?: string; testId?: string }) {

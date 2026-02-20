@@ -44,6 +44,43 @@ Ajustes realizados para que los tests sigan funcionando cuando la web cambia tex
 
 ---
 
+## Agentes, instrucciones y skills (QA Automation AI)
+
+Este repositorio incluye una **biblioteca de agentes, instrucciones y skills** pensada para QA Automation, integrada desde un catálogo tool-agnostic (compatible con Cursor, Claude, GitHub Copilot, etc.):
+
+| Carpeta | Contenido |
+|--------|-----------|
+| `agents/` | Definiciones de agentes especializados (Playwright Test Generator/Healer, Flaky Test Hunter, API Tester, Selenium Specialist, Test Refactor, etc.). |
+| `instructions/` | Reglas operativas y estándares: Playwright TypeScript, Selenium Java, accesibilidad (a11y), autoría de agentes/skills. |
+| `skills/` | Playbooks reutilizables por carpeta: `playwright-e2e-testing`, `a11y-playwright-testing`, `webapp-playwright-testing`, `qa-test-planner`, `qa-manual-istqb`, `webapp-selenium-testing`, `accessibility-selenium-testing`. |
+
+**Cómo empezar a usarlos (Cursor)**
+
+1. **Reglas de Cursor (automático)**  
+   Hay una regla en `.cursor/rules/playwright-qa.mdc` que se aplica al editar specs y page objects: el asistente sigue las convenciones de `instructions/playwright-typescript.instructions.md` (locators, POM, assertions). Al tocar `tests/**` o `tests/pages/**` esa regla se usa automáticamente.
+
+2. **En el chat (bajo demanda)**  
+   Pide explícitamente que use un skill o instrucciones, por ejemplo: sigue `instructions/playwright-typescript.instructions.md` para añadir un test, aplica el skill playwright-e2e-testing, o usa el agente Flaky Test Hunter (ver `agents/flaky-test-hunter.agent.md`).
+
+3. **Referencia con @**  
+   Incluye ficheros en el contexto con @: `@instructions/playwright-typescript.instructions.md` o `@skills/playwright-e2e-testing/SKILL.md`.
+
+4. **Generador de tests (Playwright Test Generator + MCP)**  
+   - **Configuración:** En el proyecto está `.cursor/mcp.json` con el servidor MCP de Playwright (`npx playwright run-test-mcp-server`). En Cursor: **Settings → Tools & MCP** y comprobar que el servidor `playwright-test` aparece (o reinicia Cursor para que cargue `.cursor/mcp.json`).  
+   - **Uso:** En el chat, pide que actúe como **Playwright Test Generator** y entrega un **plan de pruebas** con pasos y verificaciones. Ejemplo de prompt:  
+     *"Usa el agente Playwright Test Generator. Plan: 1) Ir a la URL del listado de coches. 2) Abrir el filtro Marca. 3) Verificar que aparece el enlace 'Ver todas las marcas'. 4) Pulsar 'Ver todas las marcas' y verificar que se muestra la lista de marcas. Genera el spec en tests/specs."*  
+     El agente usa las herramientas MCP (navegar, clic, verificar, etc.) y al final escribe el `.spec.ts` con `generator_write_test`.  
+   - **Requisitos:** Node 18+, Playwright instalado (`npm install` en el proyecto). Si el MCP no aparece en Cursor, revisa que la versión de Playwright incluya el servidor (`npx playwright run-test-mcp-server --help`).
+
+Las carpetas `agents/`, `instructions/` y `skills/` no tienen build ni tests; son documentación y guías para la IA.
+
+---
+
+
+**Origen del contenido:** [test-automation-skills-agents](https://github.com/fugazi/test-automation-skills-agents) (Douglas Urrea Ocampo, MIT). En ese repo encontrarás el README completo, flujos end-to-end y cómo mapear todo a GitHub Copilot (`.github/agents`, `.github/instructions`, `.github/skills`) si lo necesitas.
+
+---
+
 ## Prerrequisitos
 
 - **Node.js** (v18 o superior recomendado)
@@ -91,6 +128,36 @@ npm run test:cars
 
 Así el flujo hace login (teléfono + OTP) y luego el test de coches; al terminar se guardan cookies para la próxima vez.
 
+### Tests dinámicos de filtros (Nivel 5)
+
+Un spec adicional descubre los filtros disponibles desde la UI (marcas y tipos de cambio), genera combinaciones de forma automática y valida que los resultados contengan la marca aplicada. No sustituye a los 4 tests existentes; los mantiene sin cambios.
+
+**Ejecutar solo el test dinámico:**
+
+```bash
+npx playwright test tests/specs/dynamic-filters.spec.ts
+```
+
+El flujo: sesión → ir a listado → abrir filtro Marca y obtener lista de marcas → abrir filtro Cambio y obtener tipos → generar matriz (p. ej. 3 marcas × 2 tipos) → por cada combinación aplicar filtros, validar que los resultados contienen la marca y limpiar filtros.
+
+Variables opcionales para este test: `DYNAMIC_MAX_BRANDS` (por defecto 3), `DYNAMIC_MAX_EXCHANGE_TYPES` (por defecto 2).
+
+### Test listado todas las marcas e informe (`cars-list-loads.spec.ts`)
+
+Un spec recorre **todas las marcas** del filtro (tras pulsar "Ver todas las marcas"), por cada una aplica el filtro, obtiene modelos con precio (hasta 25 por marca), limpia filtros y al final genera dos informes en consola:
+
+1. **Por marca:** modelo y precio agrupados por marca, con totales y marcas omitidas (si alguna falla).
+2. **Precios de mayor a menor:** todos los vehículos ordenados por cuota mensual (formato europeo: 1.510 € → 1510).
+
+**Ejecutar solo este test:**
+
+```bash
+npx playwright test tests/specs/cars-list-loads.spec.ts
+```
+
+- Excluye no-marcas del filtro (p. ej. "Pick-up"). Si una marca devuelve 0 vehículos se registra un **warning** (posible carga incompleta de cards).
+- Timeout del test: 30 min; se han reducido esperas fijas y scroll para acortar la duración.
+
 ### Borrar cookies y forzar login completo (los 3 tests)
 
 Para simular “primera vez” y que el flujo pase por login + OTP (y captcha manual si aplica):
@@ -115,6 +182,8 @@ npm run test
 | `BRAND_OPEL_LOCATOR` / `BRAND_OPEL_TESTID` | Overrides para opción “Opel”. |
 | `EXCHANGE_TYPE_LOCATOR`, `EXCHANGE_TYPE_OPTION_LOCATOR`, etc. | Overrides para filtro tipo de cambio. |
 | `FIRST_CAR_LOCATOR`, `CAR_LIST_TESTID`, `CAR_CARD_TESTID` | Overrides para listado y primera ficha de coche. |
+| `DYNAMIC_MAX_BRANDS`, `DYNAMIC_MAX_EXCHANGE_TYPES` | Límites para el test dinámico de filtros (por defecto 3 y 2). |
+| `CLEAR_FILTERS_LOCATOR` | Override del botón "Borrar filtros" (usado en cars-list-loads y view-all-cars-clear-filters). |
 
 ### Credenciales (teléfono y OTP)
 
@@ -379,6 +448,7 @@ Qué hace cada archivo del repo:
 | `login-fail-otp.spec.ts` | Test de login fallido: introduce OTP incorrecto y comprueba que no se accede (no usa cookies). |
 | `view-all-cars.spec.ts` | Test “Ver todos los coches”: cookies/sesión, ir al listado, abrir filtro Marca, Ver todas las marcas, seleccionar Opel, listar modelos, abrir tipo de cambio, seleccionar Manual, listar coches, clic en el primero, screenshot, mantener página abierta. |
 | `view-all-cars-clear-filters.spec.ts` | Test “Limpiar filtros”: mismo flujo hasta listar con Opel + Manual; luego limpiar filtros y comprobar que el listado sin filtros es visible (sin listar todos los coches). |
+| `cars-list-loads.spec.ts` | Test "Listado todas las marcas e informe": sesión, descubre todas las marcas, por cada una aplica filtro, obtiene modelos con precio (hasta 25/marca), limpia filtros; genera informe por marca y segundo informe con precios ordenados de mayor a menor. Excluye no-marcas (p. ej. Pick-up); warning si una marca devuelve 0 vehículos. |
 
 ### tests/steps/
 

@@ -13,6 +13,35 @@ import {
 export class CarsGridPage {
   constructor(private readonly page: Page) {}
 
+  private async preloadCardsForMaxItems(maxItems: number): Promise<void> {
+    const cards = this.page.locator(
+      'article, [role="listitem"], [data-testid*="card"], a[href*="coches"], a[href*="car"]'
+    );
+    const target = Math.max(12, maxItems);
+    let prevCount = await cards.count().catch(() => 0);
+
+    // Listados muy grandes: scroll a fondo como antes.
+    if (maxItems >= 60) {
+      logger.info('Cargando más cards (scroll, puede tardar unos segundos)...');
+      await this.scrollToLoadAllCards({ rounds: 5, pauseMs: 1200 });
+      return;
+    }
+
+    // Para informes (maxItems ~25): 1–2 scrolls cortos para que lazy-load cargue más; así no perdemos coches.
+    const maxRounds = maxItems <= 25 ? 2 : Math.min(3, Math.ceil(target / 10));
+    const pauseMs = maxItems <= 25 ? 200 : 150;
+    if (prevCount >= target) return;
+
+    for (let r = 0; r < maxRounds && prevCount < target; r += 1) {
+      await this.page.evaluate(() => window.scrollBy(0, 1200));
+      await this.page.waitForTimeout(pauseMs).catch(() => {});
+      await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+      const nextCount = await cards.count().catch(() => prevCount);
+      if (nextCount <= prevCount) break;
+      prevCount = nextCount;
+    }
+  }
+
   async getVisibleModelNames(options?: {
     brandName?: string;
     timeout?: number;
@@ -21,6 +50,41 @@ export class CarsGridPage {
   }): Promise<string[]> {
     const items = await this.getVisibleModelsWithPrices(options);
     return items.map((x) => x.model);
+  }
+
+  /**
+   * Valida que el listado contiene al menos un resultado y que los modelos corresponden a la marca.
+   */
+  async assertResultsContainBrand(
+    brandName: string,
+    options?: { timeout?: number; maxItems?: number }
+  ): Promise<void> {
+    const items = await this.getVisibleModelsWithPrices({
+      brandName,
+      timeout: options?.timeout ?? 10_000,
+      maxItems: options?.maxItems ?? 100,
+    });
+    expect(items.length, `Se esperaba al menos un coche para la marca "${brandName}"`).toBeGreaterThan(0);
+    const brandLower = brandName.toLowerCase();
+    for (const item of items) {
+      expect(
+        item.model.toLowerCase().includes(brandLower),
+        `El modelo "${item.model}" debería contener la marca "${brandName}"`
+      ).toBe(true);
+    }
+  }
+
+  /**
+   * Espera a que el grid de resultados muestre al menos una card (article o listitem con precio).
+   * Usar tras aplicar/limpiar filtros para no depender de locators en el spec.
+   */
+  async waitForResultsVisible(options?: { timeout?: number }): Promise<void> {
+    const timeout = options?.timeout ?? 10_000;
+    const carCard = this.page
+      .locator('article, [role="listitem"]')
+      .filter({ hasText: /\d[\d.,]*\s*€/ })
+      .first();
+    await carCard.waitFor({ state: 'visible', timeout }).catch(() => {});
   }
 
   async scrollResultsIntoView(options?: { behavior?: 'auto' | 'smooth' }): Promise<void> {
@@ -44,9 +108,10 @@ export class CarsGridPage {
     const timeout = options?.timeout ?? 10_000;
     const override = options?.locatorOverride ?? process.env.CLEAR_FILTERS_LOCATOR;
     const waitForListAfterClear = async (): Promise<void> => {
-      await this.page.waitForLoadState('networkidle').catch(() => {});
+      await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+      await this.page.waitForTimeout(400).catch(() => {});
       const carCard = this.page.locator('article, [role="listitem"]').filter({ hasText: /\d[\d.,]*\s*€/ }).first();
-      await carCard.waitFor({ state: 'visible', timeout: 18_000 }).catch(() => {});
+      await carCard.waitFor({ state: 'visible', timeout: 4_000 }).catch(() => {});
     };
 
     if (override) {
@@ -57,25 +122,59 @@ export class CarsGridPage {
       logger.success('Filtros limpiados (con locator override).');
       return;
     }
-    const candidates: Array<{ name: string; locator: ReturnType<Page['locator']> }> = [
-      { name: 'texto "Limpiar filtros"', locator: this.page.getByText(/limpiar\s*filtros/i).first() },
-      { name: 'texto "Borrar filtros"', locator: this.page.getByText(/borrar\s*filtros/i).first() },
-      { name: 'texto "Quitar filtros"', locator: this.page.getByText(/quitar\s*filtros/i).first() },
-      { name: 'texto "Restablecer"', locator: this.page.getByText(/restablecer/i).first() },
-      { name: 'role=button Limpiar', locator: this.page.getByRole('button', { name: /limpiar|borrar|reset/i }) },
-      { name: 'role=link Limpiar', locator: this.page.getByRole('link', { name: /limpiar\s*filtros|borrar\s*filtros|reset/i }) },
-    ];
-    for (const c of candidates) {
+    const tryClick = async (locator: ReturnType<Page['locator']>, name: string): Promise<boolean> => {
       try {
-        const el = c.locator.first();
-        await el.waitFor({ state: 'visible', timeout: 4_000 });
+        const el = locator.first();
+        await el.scrollIntoViewIfNeeded().catch(() => {});
+        await el.waitFor({ state: 'visible', timeout: 6_000 });
         await el.click({ timeout: 5_000 });
         await waitForListAfterClear();
-        logger.success(`Filtros limpiados (${c.name}).`);
-        return;
+        logger.success(`Filtros limpiados (${name}).`);
+        return true;
       } catch {
-        // siguiente candidato
+        return false;
       }
+    };
+
+    if (await tryClick(this.page.getByText(/borrar\s*filtros/i).first(), 'texto "Borrar filtros"')) return;
+    if (await tryClick(this.page.getByRole('link', { name: /borrar\s*filtros/i }), 'link "Borrar filtros"')) return;
+    if (await tryClick(this.page.locator('a, button, [role="button"]').filter({ hasText: /borrar\s*filtros/i }).first(), 'elemento clickable "Borrar filtros"')) return;
+    if (await tryClick(this.page.getByText(/limpiar\s*filtros/i).first(), 'texto "Limpiar filtros"')) return;
+    if (await tryClick(this.page.getByRole('button', { name: /borrar|limpiar|quitar.*filtro/i }), 'botón Limpiar')) return;
+    if (await tryClick(this.page.getByRole('link', { name: /limpiar|borrar|quitar.*filtro/i }), 'link Limpiar')) return;
+    if (await tryClick(this.page.getByText(/quitar\s*filtros/i).first(), 'texto "Quitar filtros"')) return;
+    if (await tryClick(this.page.getByText(/restablecer/i).first(), 'texto "Restablecer"')) return;
+    try {
+      const borrarByText = this.page.getByText(/borrar\s*filtros/i).first();
+      await borrarByText.scrollIntoViewIfNeeded().catch(() => {});
+      await borrarByText.waitFor({ state: 'visible', timeout: 6_000 });
+      await borrarByText.click({ timeout: 5_000, force: true });
+      await waitForListAfterClear();
+      logger.success('Filtros limpiados (clic forzado en "Borrar filtros").');
+      return;
+    } catch {
+      // seguir con fallback de chips
+    }
+    logger.warn('No se encontró botón para limpiar filtros; intentando pulsar X en chips activos (Cambio, Marca)...');
+    const filterBar = this.page.locator('div[class*="ShortcutsFilterBar"]');
+    const activeChipLabels = [/cambio/i, /marca/i];
+    let cleared = false;
+    for (const labelRe of activeChipLabels) {
+      try {
+        const chip = filterBar.locator('div[class*="FilterShortcutButton"]').filter({ hasText: labelRe }).filter({ has: this.page.locator('button') }).first();
+        const closeBtn = chip.locator('button').first();
+        await closeBtn.waitFor({ state: 'visible', timeout: 2_000 });
+        await closeBtn.click({ timeout: 3_000 });
+        await this.page.waitForTimeout(500).catch(() => {});
+        cleared = true;
+      } catch {
+        // siguiente
+      }
+    }
+    if (cleared) {
+      await waitForListAfterClear();
+      logger.success('Filtros limpiados (pulsando X en chips Cambio/Marca).');
+      return;
     }
     throw new Error(
       'No se encontró botón/link para limpiar filtros. Si la web tiene uno, define CLEAR_FILTERS_LOCATOR en env.'
@@ -96,8 +195,7 @@ export class CarsGridPage {
 
     await this.scrollResultsIntoView();
     if (maxItems != null && maxItems > 10) {
-      logger.info('Cargando más cards (scroll, puede tardar unos segundos)...');
-      await this.scrollToLoadAllCards({ rounds: 5, pauseMs: 1200 });
+      await this.preloadCardsForMaxItems(maxItems);
     }
 
     const listTestId = options?.listTestId ?? process.env.CAR_LIST_TESTID;
@@ -109,14 +207,19 @@ export class CarsGridPage {
       const count = await cards.count();
       const out: Array<{ model: string; price: string }> = [];
       const brandNorm = brandName.trim();
-      if (logProgress && count > 0) logger.info(`Listando coches (${count} cards encontradas)...`);
+      if (logProgress && count > 5) logger.info(`Listando coches (${count} cards encontradas)...`);
+      const cardTimeoutMs = 1_200;
+      const waitVisibleMs = 400;
       for (let i = 0; i < count; i += 1) {
-        if (logProgress && (i === 0 || (i + 1) % 5 === 0 || i === count - 1)) {
+        if (logProgress && count > 5 && (i === 0 || (i + 1) % 5 === 0 || i === count - 1)) {
           logger.muted(`Procesando card ${i + 1}/${count}...`);
         }
         const card = cards.nth(i);
-        await card.first().scrollIntoViewIfNeeded().catch(() => {});
-        await card.first().waitFor({ state: 'visible', timeout: 1_000 }).catch(() => {});
+        const extractOne = async (): Promise<void> => {
+          await card.first().scrollIntoViewIfNeeded().catch(() => {});
+          await card.first().waitFor({ state: 'visible', timeout: waitVisibleMs }).catch(() => {});
+        };
+        await Promise.race([extractOne(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), cardTimeoutMs))]).catch(() => {});
         const text = await card.first().innerText().catch(() => '');
         const textClean = text.replace(MODEL_CLEAN, ' ').replace(/\s+/g, ' ').trim();
         const lines = text.trim().split(/\n/).map((l) => l.trim()).filter(Boolean);
