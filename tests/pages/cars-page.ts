@@ -31,8 +31,20 @@ export class CarsPage {
     return this.brandFilter.clickViewAllBrands(options);
   }
 
+  async reopenBrandFilter(
+    options?: Parameters<BrandFilterPage['reopenBrandFilter']>[0]
+  ): Promise<void> {
+    return this.brandFilter.reopenBrandFilter(options);
+  }
+
   getBrandDropdownPanel(): ReturnType<BrandFilterPage['getBrandDropdownPanel']> {
     return this.brandFilter.getBrandDropdownPanel();
+  }
+
+  async getAvailableBrands(
+    options?: Parameters<BrandFilterPage['getAvailableBrands']>[0]
+  ): Promise<string[]> {
+    return this.brandFilter.getAvailableBrands(options);
   }
 
   async selectBrand(
@@ -59,6 +71,12 @@ export class CarsPage {
     return this.exchangeTypeFilter.getExchangeTypeDropdownPanel();
   }
 
+  async getAvailableExchangeTypes(
+    options?: Parameters<ExchangeTypeFilterPage['getAvailableExchangeTypes']>[0]
+  ): Promise<string[]> {
+    return this.exchangeTypeFilter.getAvailableExchangeTypes(options);
+  }
+
   async selectExchangeTypeOption(
     optionName: string,
     options?: Parameters<ExchangeTypeFilterPage['selectExchangeTypeOption']>[1]
@@ -71,6 +89,12 @@ export class CarsPage {
     options?: Parameters<CarsGridPage['getVisibleModelNames']>[0]
   ): Promise<string[]> {
     return this.grid.getVisibleModelNames(options);
+  }
+
+  async waitForGridVisible(
+    options?: Parameters<CarsGridPage['waitForResultsVisible']>[0]
+  ): Promise<void> {
+    return this.grid.waitForResultsVisible(options);
   }
 
   async scrollResultsIntoView(
@@ -95,6 +119,13 @@ export class CarsPage {
     options?: Parameters<CarsGridPage['getVisibleModelsWithPrices']>[0]
   ): Promise<Array<{ model: string; price: string }>> {
     return this.grid.getVisibleModelsWithPrices(options);
+  }
+
+  async assertResultsContainBrand(
+    brandName: string,
+    options?: Parameters<CarsGridPage['assertResultsContainBrand']>[1]
+  ): Promise<void> {
+    return this.grid.assertResultsContainBrand(brandName, options);
   }
 
   async clickFirstVisibleCar(

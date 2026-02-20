@@ -29,8 +29,9 @@ const URLS = {
 export class LoginPage {
   constructor(private readonly page: Page) {}
 
-  async goto() {
-    await this.page.goto(URLS.login);
+  async goto(timeout = 25_000) {
+    await this.page.goto(URLS.login, { waitUntil: 'domcontentloaded', timeout });
+    await this.page.waitForURL(/\/login/, { timeout: 10_000 }).catch(() => {});
   }
 
   async gotoDashboard(timeout = 30_000) {
@@ -61,6 +62,8 @@ export class LoginPage {
    */
   async performFullLogin(phone: string, otp: string): Promise<void> {
     await this.goto();
+    await this.page.waitForLoadState('domcontentloaded').catch(() => {});
+    await this.page.waitForTimeout(500).catch(() => {}); // dar tiempo a que el formulario React se monte
     await this.fillPhone(phone);
     await this.clickContinueWhenEnabled();
     await this.waitForOtpStepReady();
@@ -68,9 +71,30 @@ export class LoginPage {
     await this.tryAcceptCookieConsent();
   }
 
-  async fillPhone(phone: string, timeout = 15_000) {
-    const input = this.page.locator(SELECTORS.phoneInput).first();
-    await input.waitFor({ state: 'visible', timeout });
+  async fillPhone(phone: string, timeout = 22_000) {
+    const candidates = [
+      () => this.page.locator(SELECTORS.phoneInput).first(),
+      () => this.page.getByLabel(/teléfono|phone|número|móvil/i).first(),
+      () => this.page.getByPlaceholder(/teléfono|phone|número|móvil|introduce/i).first(),
+      () => this.page.getByRole('textbox', { name: /tel|phone|número|móvil/i }).first(),
+    ];
+    const perCandidate = Math.min(8_000, Math.floor(timeout / candidates.length));
+    let input: ReturnType<Page['locator']> | null = null;
+    for (const getLoc of candidates) {
+      try {
+        const loc = getLoc();
+        await loc.waitFor({ state: 'visible', timeout: perCandidate });
+        input = loc;
+        break;
+      } catch {
+        continue;
+      }
+    }
+    if (!input) {
+      throw new Error(
+        'No se encontró el input de teléfono en la página de login. ¿La URL es /login? ¿El formulario usa otro label/placeholder?'
+      );
+    }
     await input.click();
     await input.fill(phone);
   }

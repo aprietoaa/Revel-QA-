@@ -8,7 +8,7 @@ import { logger } from '../utils/logger';
 import { STEPS } from '../steps/view-all-cars-clear-filters.steps';
 
 test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de nuevo', async ({ page }) => {
-  test.setTimeout(30 * 60 * 1000);
+  test.setTimeout(5 * 60 * 1000); // 5 min: fallar antes si algo se cuelga
   const loginPage = new LoginPage(page);
   const carsPage = new CarsPage(page);
   let needsLogin = true;
@@ -73,40 +73,22 @@ test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de
 
   await test.step(STEPS.viewAllBrands, async () => {
     logger.step(6, totalSteps, STEPS.viewAllBrands);
-    const verTodas =
-      process.env.VIEW_ALL_BRANDS_LOCATOR
-        ? page.locator(process.env.VIEW_ALL_BRANDS_LOCATOR).first()
-        : page.getByText(/ver todas las marcas/i).first();
-    await verTodas.waitFor({ state: 'visible', timeout: 10_000 });
-    await verTodas.click({ timeout: 5_000, noWaitAfter: true });
+    await carsPage.clickViewAllBrands({
+      locatorOverride: process.env.VIEW_ALL_BRANDS_LOCATOR,
+    });
     logger.success('Ver todas las marcas pulsado.');
   });
 
   await test.step(STEPS.reopenBrand, async () => {
     logger.step(7, totalSteps, STEPS.reopenBrand);
-    const clickOpt = { timeout: 5_000, noWaitAfter: true } as const;
-    if (process.env.BRAND_LOCATOR) {
-      const marca = page.locator(process.env.BRAND_LOCATOR).first();
-      await marca.waitFor({ state: 'visible', timeout: 10_000 });
-      await marca.click({ ...clickOpt, timeout: 10_000 });
-    } else {
-      const filterBar = page.locator('div[class*="ShortcutsFilterBar"]');
-      const marcaByIndex = filterBar.locator('div:nth-child(7) div[class*="FilterShortcutButton"] > p').first();
-      const marcaByText = page.locator('div[class*="FilterShortcutButton"]').filter({ has: page.locator('p', { hasText: /marca/i }) }).locator('p').first();
-      try {
-        await marcaByIndex.waitFor({ state: 'visible', timeout: 5_000 });
-        await marcaByIndex.click(clickOpt);
-      } catch {
-        await marcaByText.waitFor({ state: 'visible', timeout: 5_000 });
-        await marcaByText.click(clickOpt);
-      }
-    }
+    await carsPage.reopenBrandFilter({
+      locatorOverride: process.env.BRAND_LOCATOR,
+    });
     logger.success('Marca reabierto.');
   });
 
   await test.step(STEPS.selectBrandOpel, async () => {
     logger.step(8, totalSteps, STEPS.selectBrandOpel);
-    await page.getByText(/opel/i).first().waitFor({ state: 'visible', timeout: 4_000 }).catch(() => {});
     await carsPage.selectBrand('Opel', {
       locatorOverride: process.env.BRAND_OPEL_LOCATOR,
       testId: process.env.BRAND_OPEL_TESTID,
@@ -116,7 +98,7 @@ test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de
 
   await test.step(STEPS.listModels, async () => {
     logger.step(9, totalSteps, STEPS.listModels);
-    await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    await carsPage.waitForGridVisible({ timeout: 10_000 });
     const modelsWithPrices = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel', maxItems: 150 });
     logger.info(`Coches visibles con Marca Opel (${modelsWithPrices.length}):`);
     modelsWithPrices.forEach((item, i) => logger.car(i + 1, item.model, item.price));
@@ -134,7 +116,6 @@ test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de
 
   await test.step(STEPS.selectManualTransmission, async () => {
     logger.step(11, totalSteps, STEPS.selectManualTransmission);
-    await page.getByText(/manual/i).first().waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
     await carsPage.selectExchangeTypeOption('Manual', {
       locatorOverride: process.env.EXCHANGE_TYPE_OPTION_LOCATOR,
       testId: process.env.EXCHANGE_TYPE_OPTION_TESTID,
@@ -144,7 +125,7 @@ test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de
 
   await test.step(STEPS.listModelsManual, async () => {
     logger.step(12, totalSteps, STEPS.listModelsManual);
-    await page.locator('article, [role="listitem"]').first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    await carsPage.waitForGridVisible({ timeout: 10_000 });
     const modelsManual = await carsPage.getVisibleModelsWithPrices({ brandName: 'Opel', maxItems: 150 });
     logger.info(`Coches con filtros Opel + Manual (${modelsManual.length}):`);
     modelsManual.forEach((item, i) => logger.car(i + 1, item.model, item.price));
@@ -160,8 +141,7 @@ test('Ver todos los coches: aplicar filtros, listar, limpiar filtros y listar de
 
   await test.step(STEPS.listModelsAfterClear, async () => {
     logger.step(14, totalSteps, STEPS.listModelsAfterClear);
-    const cardWithPrice = page.locator('article, [role="listitem"]').filter({ hasText: /\d[\d.,]*\s*€/ }).first();
-    await cardWithPrice.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    await carsPage.waitForGridVisible({ timeout: 15_000 });
     logger.success('Filtros limpiados; listado sin filtros visible.');
   });
 
